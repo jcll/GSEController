@@ -189,10 +189,16 @@ class ProfileStore: ObservableObject {
     }
 
     private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.example.gsecontroller", category: "ProfileStore")
+    private let defaults: UserDefaults
 
-    init() {
+    convenience init() {
+        self.init(defaults: .standard)
+    }
+
+    init(defaults: UserDefaults) {
+        self.defaults = defaults
         // Migration from pre-1.x "profiles" UserDefaults key
-        if let oldData = UserDefaults.standard.data(forKey: "profiles"),
+        if let oldData = defaults.data(forKey: "profiles"),
            let oldProfiles = try? JSONDecoder().decode([_LegacyMacroProfile].self, from: oldData) {
             let migrated = oldProfiles.map { p in
                 ProfileGroup(
@@ -210,13 +216,13 @@ class ProfileStore: ObservableObject {
             }
             groups = migrated
             activeGroupId = migrated.first?.id
-            UserDefaults.standard.removeObject(forKey: "profiles")
-            UserDefaults.standard.removeObject(forKey: "activeProfileId")
+            defaults.removeObject(forKey: "profiles")
+            defaults.removeObject(forKey: "activeProfileId")
             save()
-        } else if let data = UserDefaults.standard.data(forKey: "groups"),
+        } else if let data = defaults.data(forKey: "groups"),
                   let decoded = try? JSONDecoder().decode([ProfileGroup].self, from: data) {
             groups = decoded
-            if let idStr = UserDefaults.standard.string(forKey: "activeGroupId"),
+            if let idStr = defaults.string(forKey: "activeGroupId"),
                let id = UUID(uuidString: idStr),
                decoded.contains(where: { $0.id == id }) {
                 activeGroupId = id
@@ -242,8 +248,8 @@ class ProfileStore: ObservableObject {
     private func save() {
         do {
             let data = try JSONEncoder().encode(groups)
-            UserDefaults.standard.set(data, forKey: "groups")
-            UserDefaults.standard.set(activeGroupId?.uuidString, forKey: "activeGroupId")
+            defaults.set(data, forKey: "groups")
+            defaults.set(activeGroupId?.uuidString, forKey: "activeGroupId")
         } catch {
             Self.logger.error("Failed to encode groups: \(error.localizedDescription)")
         }
@@ -263,7 +269,7 @@ class ProfileStore: ObservableObject {
 }
 
 // Used only to decode legacy UserDefaults data written by pre-1.x versions.
-private struct _LegacyMacroProfile: Decodable {
+struct _LegacyMacroProfile: Codable {
     var id: UUID
     var name: String
     var button: ControllerButton
