@@ -1,0 +1,35 @@
+// Lightweight helper that opens a named FIFO and posts CGKeyboard events.
+// Loops forever so it stays resident as a launchd agent; each time the GUI
+// app opens the FIFO for writing, the helper wakes and starts posting events.
+// Launched independently by launchd — NOT as a child of the GUI app — so
+// CGEventPost reaches other applications (including WoW).
+//
+// Pass --check-ax to test whether this binary has Accessibility permission
+// (exits 0 = trusted, 1 = not trusted).
+#include <CoreGraphics/CoreGraphics.h>
+#include <ApplicationServices/ApplicationServices.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdint.h>
+#include <string.h>
+
+#define FIFO_PATH "/tmp/com.jcll.gsecontroller.keys"
+
+int main(int argc, char *argv[]) {
+    if (argc > 1 && strcmp(argv[1], "--check-ax") == 0) {
+        return AXIsProcessTrusted() ? 0 : 1;
+    }
+    while (1) {
+        int fd = open(FIFO_PATH, O_RDONLY);
+        if (fd < 0) { sleep(1); continue; }
+        uint16_t keyCode;
+        while (read(fd, &keyCode, sizeof(keyCode)) == sizeof(keyCode)) {
+            CGEventRef down = CGEventCreateKeyboardEvent(NULL, (CGKeyCode)keyCode, true);
+            CGEventRef up   = CGEventCreateKeyboardEvent(NULL, (CGKeyCode)keyCode, false);
+            if (down) { CGEventPost(kCGHIDEventTap, down); CFRelease(down); }
+            if (up)   { CGEventPost(kCGHIDEventTap, up);   CFRelease(up); }
+        }
+        close(fd);
+    }
+    return 0;
+}
