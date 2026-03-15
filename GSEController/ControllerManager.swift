@@ -14,25 +14,15 @@ class ControllerManager: ObservableObject {
     @Published var hasAccessibility = false
     @Published var hasHelperAccessibility = false
     @Published var requireWoWFocus: Bool {
-        didSet { UserDefaults.standard.set(requireWoWFocus, forKey: "requireWoWFocus") }
+        didSet {
+            UserDefaults.standard.set(requireWoWFocus, forKey: "requireWoWFocus")
+            fireEngine.requireWoWFocus = requireWoWFocus
+        }
     }
 
+    let fireEngine = FireEngine()
     private var controller: GCController?
-    private var activeTimers: [ControllerButton: DispatchSourceTimer] = [:]
-    private var heldModifiers: Set<KeyModifier> = []
     private var activeGroup: ProfileGroup?
-    private var lastAccessibilityCheck: TimeInterval = 0
-    private var activity: NSObjectProtocol?
-
-    // Serial queue owns all CGEvent posting — prevents concurrent HID stream writes.
-    private let fireQueue = DispatchQueue(label: "com.jcll.gsecontroller.fire", qos: .userInteractive)
-
-    // Lock-protected so fireQueue reads and main-thread writes don't race.
-    private let _wowIsActive = OSAllocatedUnfairLock<Bool>(initialState: false)
-    private var wowIsActive: Bool {
-        get { _wowIsActive.withLock { $0 } }
-        set { _wowIsActive.withLock { $0 = newValue } }
-    }
 
     init() {
         self.requireWoWFocus = UserDefaults.standard.object(forKey: "requireWoWFocus") as? Bool ?? true
@@ -43,8 +33,14 @@ class ControllerManager: ObservableObject {
         if let existing = GCController.controllers().first {
             connectController(existing)
         }
-        // Compile helper binary eagerly so it exists before the user hits Start.
         KeySimulator.ensureHelper()
+
+        fireEngine.requireWoWFocus = requireWoWFocus
+        fireEngine.onAccessibilityRevoked = { [weak self] in
+            self?.hasAccessibility = false
+            self?.stop()
+        }
+        fireEngine.$isFiring.assign(to: &$isFiring)
     }
 
     // MARK: - Controller Notifications
@@ -103,12 +99,12 @@ class ControllerManager: ObservableObject {
 
     @objc private func activeAppChanged(_ notification: Notification) {
         guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
-        wowIsActive = Self.isWoW(app)
+        fireEngine.wowIsActive = Self.isWoW(app)
     }
 
     private func refreshWoWFocus() {
         if let app = NSWorkspace.shared.frontmostApplication {
-            wowIsActive = Self.isWoW(app)
+            fireEngine.wowIsActive = Self.isWoW(app)
         }
     }
 
@@ -127,7 +123,6 @@ class ControllerManager: ObservableObject {
     deinit {
         NotificationCenter.default.removeObserver(self)
         NSWorkspace.shared.notificationCenter.removeObserver(self)
-        for (_, timer) in activeTimers { timer.cancel() }
     }
 
     // MARK: - Start / Stop
@@ -146,6 +141,7 @@ class ControllerManager: ObservableObject {
         activeGroup = group
         isRunning = true
         KeySimulator.ensureHelper()
+        fireEngine.requireWoWFocus = requireWoWFocus
         refreshWoWFocus()
         let bindingCount = group.bindings.count
         Self.logger.info("Started group \"\(group.name, privacy: .public)\" with \(bindingCount) binding(s)")
@@ -154,13 +150,7 @@ class ControllerManager: ObservableObject {
     }
 
     func stop() {
-        // Release any held modifiers before stopping to prevent stuck keys.
-        for modifier in heldModifiers {
-            KeySimulator.modifierUp(modifier)
-        }
-        heldModifiers.removeAll()
-
-        cancelAllTimers()
+        fireEngine.stopAll()
         clearButtonHandlers()
         isRunning = false
         activeGroup = nil
@@ -195,7 +185,6 @@ class ControllerManager: ObservableObject {
         clearButtonHandlers()
 
         for binding in group.bindings {
-            // Capture binding by value — the closure doesn't hold a reference to the group.
             buttonInput(for: binding.button, on: gamepad)?.pressedChangedHandler = { [weak self] _, _, pressed in
                 DispatchQueue.main.async {
                     self?.handleButton(binding: binding, pressed: pressed)
@@ -218,9 +207,9 @@ class ControllerManager: ObservableObject {
         switch binding.mode {
         case .hold:
             if pressed {
-                startTimer(for: binding)
+                fireEngine.startFiring(binding: binding)
             } else {
-                cancelTimer(for: binding.button)
+                fireEngine.stopFiring(button: binding.button)
             }
 
         case .tap:
@@ -229,79 +218,12 @@ class ControllerManager: ObservableObject {
             }
 
         case .modifierHold:
-            guard binding.modifier != .none else { return }
             if pressed {
-                KeySimulator.modifierDown(binding.modifier)
-                heldModifiers.insert(binding.modifier)
+                fireEngine.modifierDown(binding.modifier)
             } else {
-                KeySimulator.modifierUp(binding.modifier)
-                heldModifiers.remove(binding.modifier)
+                fireEngine.modifierUp(binding.modifier)
             }
         }
-    }
-
-    // MARK: - Timer management
-
-    private func startTimer(for binding: MacroBinding) {
-        // Don't double-start if already running for this button.
-        guard activeTimers[binding.button] == nil else { return }
-
-        let keyCode = binding.keyCode
-        let interval = 1.0 / min(max(binding.rate, 1.0), 30.0)
-        let focusRequired = requireWoWFocus
-
-        let timer = DispatchSource.makeTimerSource(queue: fireQueue)
-        timer.schedule(deadline: .now(), repeating: interval, leeway: .milliseconds(4))
-
-        var lastAccessCheck = ProcessInfo.processInfo.systemUptime
-
-        timer.setEventHandler { [weak self] in
-            guard let self else { return }
-            let now = ProcessInfo.processInfo.systemUptime
-            if now - lastAccessCheck >= 3.0 {
-                lastAccessCheck = now
-                guard KeySimulator.isAccessibilityEnabled else {
-                    Self.logger.warning("Accessibility permission revoked, stopping")
-                    DispatchQueue.main.async { self.stop(); self.hasAccessibility = false }
-                    return
-                }
-            }
-            if focusRequired && !self.wowIsActive { return }
-            KeySimulator.pressKey(keyCode)
-        }
-
-        activeTimers[binding.button] = timer
-
-        if activity == nil {
-            activity = ProcessInfo.processInfo.beginActivity(
-                options: [.userInitiated, .idleSystemSleepDisabled],
-                reason: "Firing macro key presses"
-            )
-        }
-        isFiring = true
-        statusMessage = "FIRING"
-
-        timer.resume()
-    }
-
-    private func cancelTimer(for button: ControllerButton) {
-        activeTimers[button]?.cancel()
-        activeTimers[button] = nil
-
-        if activeTimers.isEmpty {
-            isFiring = false
-            if let a = activity { ProcessInfo.processInfo.endActivity(a); activity = nil }
-            if isRunning, let group = activeGroup {
-                statusMessage = "Active — \(group.name)"
-            }
-        }
-    }
-
-    private func cancelAllTimers() {
-        for (_, timer) in activeTimers { timer.cancel() }
-        activeTimers.removeAll()
-        isFiring = false
-        if let a = activity { ProcessInfo.processInfo.endActivity(a); activity = nil }
     }
 
     func checkAccessibility() {

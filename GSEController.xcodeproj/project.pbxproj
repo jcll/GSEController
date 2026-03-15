@@ -13,6 +13,7 @@
 		B10000000000000000000A0D /* KeySimulator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000A3 /* KeySimulator.swift */; };
 		B10000000000000000000A0E /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000A4 /* Models.swift */; };
 		B10000000000000000000A0F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000A7 /* Assets.xcassets */; };
+		B10000000000000000000A10 /* FireEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000A9 /* FireEngine.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -25,6 +26,7 @@
 		B100000000000000000000A6 /* GSEController.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GSEController.entitlements; sourceTree = "<group>"; };
 		B100000000000000000000A7 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B100000000000000000000A8 /* GSEController.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GSEController.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B100000000000000000000A9 /* FireEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FireEngine.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -52,6 +54,7 @@
 				B100000000000000000000A0 /* GSEControllerApp.swift */,
 				B100000000000000000000A1 /* ContentView.swift */,
 				B100000000000000000000A2 /* ControllerManager.swift */,
+				B100000000000000000000A9 /* FireEngine.swift */,
 				B100000000000000000000A3 /* KeySimulator.swift */,
 				B100000000000000000000A4 /* Models.swift */,
 				B100000000000000000000A7 /* Assets.xcassets */,
@@ -143,6 +146,7 @@
 				B10000000000000000000A0C /* ControllerManager.swift in Sources */,
 				B10000000000000000000A0D /* KeySimulator.swift in Sources */,
 				B10000000000000000000A0E /* Models.swift in Sources */,
+				B10000000000000000000A10 /* FireEngine.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
