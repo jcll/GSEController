@@ -131,19 +131,18 @@ enum KeySimulator {
         writeCommand(type: 2, keyCode: modifier.keyCode)
     }
 
+    static func encodeCommand(type commandType: UInt8, keyCode: UInt16) -> [UInt8] {
+        [commandType, UInt8(keyCode & 0xFF), UInt8(keyCode >> 8), 0]
+    }
+
     private static func writeCommand(type: UInt8, keyCode: UInt16) {
         _fd.withLock { fd in
             guard fd >= 0 else {
                 logger.warning("writeCommand: helper not ready yet")
                 return
             }
-            var buf: (UInt8, UInt8, UInt8, UInt8) = (
-                type,
-                UInt8(keyCode & 0xFF),
-                UInt8(keyCode >> 8),
-                0
-            )
-            let n = Darwin.write(fd, &buf, 4)
+            let buf = encodeCommand(type: type, keyCode: keyCode)
+            let n = buf.withUnsafeBytes { Darwin.write(fd, $0.baseAddress!, 4) }
             if n != 4 {
                 logger.warning("FIFO write failed (errno \(errno)), reopening")
                 Darwin.close(fd)
