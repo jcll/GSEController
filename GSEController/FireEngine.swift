@@ -23,6 +23,7 @@ class FireEngine: ObservableObject {
 
     deinit {
         for (_, timer) in activeTimers { timer.cancel() }
+        if let a = activity { ProcessInfo.processInfo.endActivity(a) }
     }
 
     func startFiring(binding: MacroBinding) {

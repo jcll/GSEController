@@ -2,6 +2,7 @@ import Foundation
 import GameController
 import AppKit
 import os
+import Combine
 
 class ControllerManager: ObservableObject {
     private static let logger = Logger(subsystem: "com.jcll.gsecontroller", category: "ControllerManager")
@@ -20,9 +21,10 @@ class ControllerManager: ObservableObject {
         }
     }
 
-    let fireEngine = FireEngine()
+    private let fireEngine = FireEngine()
     private var controller: GCController?
     private var activeGroup: ProfileGroup?
+    private var firingObserver: AnyCancellable?
 
     init() {
         self.requireWoWFocus = UserDefaults.standard.object(forKey: "requireWoWFocus") as? Bool ?? true
@@ -41,6 +43,15 @@ class ControllerManager: ObservableObject {
             self?.stop()
         }
         fireEngine.$isFiring.assign(to: &$isFiring)
+
+        firingObserver = fireEngine.$isFiring.sink { [weak self] firing in
+            guard let self, self.isRunning else { return }
+            if firing {
+                self.statusMessage = "FIRING"
+            } else if let group = self.activeGroup {
+                self.statusMessage = "Active — \(group.name)"
+            }
+        }
     }
 
     // MARK: - Controller Notifications
