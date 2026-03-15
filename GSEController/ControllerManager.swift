@@ -212,6 +212,7 @@ class ControllerManager: ObservableObject {
     // MARK: - Per-binding event handling
 
     private func handleButton(binding: MacroBinding, pressed: Bool) {
+        guard isRunning else { return }
         switch binding.mode {
         case .hold:
             if pressed {
@@ -259,7 +260,6 @@ class ControllerManager: ObservableObject {
                 lastAccessCheck = now
                 guard KeySimulator.isAccessibilityEnabled else {
                     Self.logger.warning("Accessibility permission revoked, stopping")
-                    timer.cancel()
                     DispatchQueue.main.async { self.stop(); self.hasAccessibility = false }
                     return
                 }
