@@ -11,11 +11,15 @@ enum KeySimulator {
     // All access to the FIFO write fd is serialized through this lock.
     private static let _fd = OSAllocatedUnfairLock<Int32>(initialState: -1)
     private static let _setupStarted = OSAllocatedUnfairLock<Bool>(initialState: false)
-    private static let fifoPath = "/tmp/com.jcll.gsecontroller.keys"
+    private static let fifoPath: String = {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("com.jcll.gsecontroller.keys")
+            .path
+    }()
     private static let agentLabel = "com.jcll.gsecontroller.helper"
 
     // Bump this when the helper source changes to force recompilation.
-    private static let helperVersion = "v6-modifiers"
+    private static let helperVersion = "v7-tmpdir"
 
     private static var supportDir: URL {
         let base = FileManager.default
@@ -43,12 +47,17 @@ enum KeySimulator {
         #include <unistd.h>
         #include <stdint.h>
         #include <string.h>
-        #define FIFO_PATH "/tmp/com.jcll.gsecontroller.keys"
+        #include <stdlib.h>
+        static const char *get_fifo_path(void) {
+            const char *env = getenv("FIFO_PATH");
+            return env ? env : "/tmp/com.jcll.gsecontroller.keys";
+        }
         int main(int argc, char *argv[]) {
             if (argc > 1 && strcmp(argv[1], "--check-ax") == 0)
                 return AXIsProcessTrusted() ? 0 : 1;
+            const char *fifo_path = get_fifo_path();
             while (1) {
-                int fd = open(FIFO_PATH, O_RDONLY);
+                int fd = open(fifo_path, O_RDONLY);
                 if (fd < 0) { sleep(1); continue; }
                 uint8_t buf[4];
                 while (read(fd, buf, 4) == 4) {
@@ -267,6 +276,10 @@ enum KeySimulator {
             return
         }
 
+        let logDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/GSEController")
+        try? FileManager.default.createDirectory(at: logDir, withIntermediateDirectories: true)
+
         let plist = """
             <?xml version="1.0" encoding="UTF-8"?>
             <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -278,10 +291,15 @@ enum KeySimulator {
                 <array>
                     <string>\(helperURL.path)</string>
                 </array>
+                <key>EnvironmentVariables</key>
+                <dict>
+                    <key>FIFO_PATH</key>
+                    <string>\(fifoPath)</string>
+                </dict>
                 <key>KeepAlive</key>
                 <true/>
                 <key>StandardErrorPath</key>
-                <string>/tmp/com.jcll.gsecontroller.helper.log</string>
+                <string>\(FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/GSEController/helper.log").path)</string>
             </dict>
             </plist>
             """
