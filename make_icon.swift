@@ -61,6 +61,11 @@ let icons: [(Int, String)] = [
 for (pixels, name) in icons {
     let data = renderIcon(pixels: pixels)
     let path = (outDir as NSString).appendingPathComponent(name)
-    try! data.write(to: URL(fileURLWithPath: path))
-    print("  ✓ \(name) (\(pixels)px)")
+    do {
+        try data.write(to: URL(fileURLWithPath: path))
+        print("  ✓ \(name) (\(pixels)px)")
+    } catch {
+        fputs("Error writing \(name): \(error)\n", stderr)
+        exit(1)
+    }
 }
