@@ -1,0 +1,25 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build (Debug)
+        run: |
+          xcodebuild \
+            -project GSEController.xcodeproj \
+            -scheme GSEController \
+            -configuration Debug \
+            build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | grep -E "error:|warning:|BUILD SUCCEEDED|BUILD FAILED"
