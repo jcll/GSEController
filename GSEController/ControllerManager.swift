@@ -43,6 +43,8 @@ class ControllerManager: ObservableObject {
         if let existing = GCController.controllers().first {
             connectController(existing)
         }
+        // Compile helper binary eagerly so it exists before the user hits Start.
+        KeySimulator.ensureHelper()
     }
 
     // MARK: - Controller Notifications
