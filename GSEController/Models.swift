@@ -180,7 +180,7 @@ class ProfileStore: ObservableObject {
         didSet { save() }
     }
     @Published var activeGroupId: UUID? {
-        didSet { UserDefaults.standard.set(activeGroupId?.uuidString, forKey: "activeGroupId") }
+        didSet { save() }
     }
 
     var activeGroup: ProfileGroup? {
@@ -216,7 +216,8 @@ class ProfileStore: ObservableObject {
                   let decoded = try? JSONDecoder().decode([ProfileGroup].self, from: data) {
             groups = decoded
             if let idStr = UserDefaults.standard.string(forKey: "activeGroupId"),
-               let id = UUID(uuidString: idStr) {
+               let id = UUID(uuidString: idStr),
+               decoded.contains(where: { $0.id == id }) {
                 activeGroupId = id
             } else {
                 activeGroupId = decoded.first?.id
@@ -241,6 +242,7 @@ class ProfileStore: ObservableObject {
         do {
             let data = try JSONEncoder().encode(groups)
             UserDefaults.standard.set(data, forKey: "groups")
+            UserDefaults.standard.set(activeGroupId?.uuidString, forKey: "activeGroupId")
         } catch {
             Self.logger.error("Failed to encode groups: \(error.localizedDescription)")
         }
