@@ -175,6 +175,7 @@ struct MacroKey: Identifiable, Hashable, Codable {
 
 // MARK: - ProfileStore
 
+@MainActor
 class ProfileStore: ObservableObject {
     @Published var groups: [ProfileGroup] {
         didSet { save() }
