@@ -61,9 +61,8 @@ import Testing
 
     @Test(arguments: [6.0, 10.0, 15.0, 20.0])
     func ratePresetIntervalMatchesClampedInterval(pps: Double) {
-        // Verify the formula — FireEngine.clampedInterval extracted in Task 4
-        let expected = 1.0 / min(max(pps, 1.0), 30.0)
-        let actual = 1.0 / min(max(pps, 1.0), 30.0)
+        let expected = FireEngine.clampedInterval(rate: pps)
+        let actual = 1.0 / pps
         #expect(abs(actual - expected) < 1e-9)
     }
 }
