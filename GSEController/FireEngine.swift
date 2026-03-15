@@ -39,22 +39,23 @@ class FireEngine: ObservableObject {
         timer.schedule(deadline: .now(), repeating: interval, leeway: .milliseconds(4))
 
         var lastAccessCheck = ProcessInfo.processInfo.systemUptime
+        // Capture the lock directly so the event handler never touches @MainActor-isolated self.
+        let wowLock = _wowIsActive
 
         timer.setEventHandler { [weak self] in
-            guard let self else { return }
             let now = ProcessInfo.processInfo.systemUptime
             if now - lastAccessCheck >= 3.0 {
                 lastAccessCheck = now
-                guard KeySimulator.isAccessibilityEnabled else {
-                    Self.logger.warning("Accessibility permission revoked, stopping")
+                if !KeySimulator.isAccessibilityEnabled {
                     Task { @MainActor [weak self] in
+                        Self.logger.warning("Accessibility permission revoked, stopping")
                         self?.stopAll()
                         self?.onAccessibilityRevoked?()
                     }
                     return
                 }
             }
-            if focusRequired && !self.wowIsActive { return }
+            if focusRequired && !wowLock.withLock({ $0 }) { return }
             KeySimulator.pressKey(keyCode)
         }
 
