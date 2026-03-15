@@ -1,6 +1,6 @@
 # GSEController
 
-A macOS menu bar app that turns your PS5 (or Xbox) controller into a rapid-fire keyboard macro trigger for World of Warcraft — designed for use with [GSE (GnomeSequencer Enhanced)](https://www.curseforge.com/wow/addons/gnome-sequencer-enhanced).
+A macOS menu bar app that turns your PS5 (or Xbox) controller into a rapid-fire keyboard macro trigger for World of Warcraft — designed for use with [GSE (GnomeSequencer Enhanced)](https://www.curseforge.com/wow/addons/gse-gnome-sequencer-enhanced-advanced-macros).
 
 Hold a button → the app spams your macro key at a configurable rate. D-pad buttons can hold modifier keys (Alt/Shift/Ctrl) to activate modifier blocks inside your GSE rotation.
 
