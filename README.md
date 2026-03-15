@@ -42,6 +42,14 @@ On first launch, macOS will ask for Accessibility permission — this is require
 xcodebuild -scheme GSEController -destination 'platform=macOS' build
 ```
 
+## Running tests
+
+```bash
+xcodebuild test -project GSEController.xcodeproj -scheme GSEController -destination 'platform=macOS,arch=arm64'
+```
+
+29 unit tests covering `Models`, `FireEngine`, and `KeySimulator` pure logic. No mocking infrastructure — tests run entirely in-process via `TEST_HOST`/`BUNDLE_LOADER`.
+
 ## Setup guide
 
 1. Launch GSEController and connect your controller
