@@ -226,8 +226,19 @@ enum KeySimulator {
         }
 
         if proc.terminationStatus == 0 {
+            // Ad-hoc sign so the binary has a stable identity for Accessibility trust.
+            let sign = Process()
+            sign.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+            sign.arguments = ["--sign", "-", "--force", helperURL.path]
+            sign.standardOutput = FileHandle.nullDevice
+            sign.standardError = FileHandle.nullDevice
+            try? sign.run()
+            sign.waitUntilExit()
+            if sign.terminationStatus != 0 {
+                logger.warning("codesign ad-hoc sign failed — binary may not hold Accessibility trust")
+            }
             try? helperVersion.write(to: versionURL, atomically: true, encoding: .utf8)
-            logger.info("Compiled key helper at \(helperURL.path, privacy: .public)")
+            logger.info("Compiled and signed key helper at \(helperURL.path, privacy: .public)")
         } else {
             let errStr = String(data: errPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
             logger.error("cc failed: \(errStr, privacy: .public)")
