@@ -13,7 +13,6 @@
 		B10000000000000000000A0D /* KeySimulator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000A3 /* KeySimulator.swift */; };
 		B10000000000000000000A0E /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000A4 /* Models.swift */; };
 		B10000000000000000000A0F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000A7 /* Assets.xcassets */; };
-		B10000000000000000000A10 /* KeyHelper.c.txt in Resources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000A9 /* KeyHelper.c.txt */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -26,7 +25,6 @@
 		B100000000000000000000A6 /* GSEController.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = GSEController.entitlements; sourceTree = "<group>"; };
 		B100000000000000000000A7 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B100000000000000000000A8 /* GSEController.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GSEController.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		B100000000000000000000A9 /* KeyHelper.c.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = KeyHelper.c.txt; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -59,7 +57,6 @@
 				B100000000000000000000A7 /* Assets.xcassets */,
 				B100000000000000000000A5 /* Info.plist */,
 				B100000000000000000000A6 /* GSEController.entitlements */,
-				B100000000000000000000A9 /* KeyHelper.c.txt */,
 			);
 			path = GSEController;
 			sourceTree = "<group>";
@@ -131,7 +128,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				B10000000000000000000A0F /* Assets.xcassets in Resources */,
-				B10000000000000000000A10 /* KeyHelper.c.txt in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
