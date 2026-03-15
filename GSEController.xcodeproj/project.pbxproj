@@ -14,6 +14,9 @@
 		B10000000000000000000A0E /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000A4 /* Models.swift */; };
 		B10000000000000000000A0F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000A7 /* Assets.xcassets */; };
 		B10000000000000000000A10 /* FireEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000A9 /* FireEngine.swift */; };
+		T10000000000000000000001 /* ModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T20000000000000000000001 /* ModelsTests.swift */; };
+		T10000000000000000000002 /* FireEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T20000000000000000000002 /* FireEngineTests.swift */; };
+		T10000000000000000000003 /* KeySimulatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T20000000000000000000003 /* KeySimulatorTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,10 +31,21 @@
 		B100000000000000000000A8 /* GSEController.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GSEController.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B100000000000000000000A9 /* FireEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FireEngine.swift; sourceTree = "<group>"; };
 		E072AD09E0B04C459D4A8E32 /* LocalConfig.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = LocalConfig.xcconfig; sourceTree = "<group>"; };
+		T20000000000000000000001 /* ModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelsTests.swift; sourceTree = "<group>"; };
+		T20000000000000000000002 /* FireEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FireEngineTests.swift; sourceTree = "<group>"; };
+		T20000000000000000000003 /* KeySimulatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeySimulatorTests.swift; sourceTree = "<group>"; };
+		T20000000000000000000004 /* GSEControllerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GSEControllerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		B100000000000000000000C1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		T30000000000000000000002 /* Frameworks (Tests) */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -45,6 +59,7 @@
 			isa = PBXGroup;
 			children = (
 				B100000000000000000000B1 /* GSEController */,
+				T40000000000000000000001 /* GSEControllerTests */,
 				B100000000000000000000B2 /* Products */,
 				E072AD09E0B04C459D4A8E32 /* LocalConfig.xcconfig */,
 			);
@@ -70,8 +85,19 @@
 			isa = PBXGroup;
 			children = (
 				B100000000000000000000A8 /* GSEController.app */,
+				T20000000000000000000004 /* GSEControllerTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		T40000000000000000000001 /* GSEControllerTests */ = {
+			isa = PBXGroup;
+			children = (
+				T20000000000000000000001 /* ModelsTests.swift */,
+				T20000000000000000000002 /* FireEngineTests.swift */,
+				T20000000000000000000003 /* KeySimulatorTests.swift */,
+			);
+			path = GSEControllerTests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -94,6 +120,23 @@
 			productReference = B100000000000000000000A8 /* GSEController.app */;
 			productType = "com.apple.product-type.application";
 		};
+		T50000000000000000000001 /* GSEControllerTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = T70000000000000000000001 /* Build configuration list for PBXNativeTarget "GSEControllerTests" */;
+			buildPhases = (
+				T30000000000000000000001 /* Sources (Tests) */,
+				T30000000000000000000002 /* Frameworks (Tests) */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				T80000000000000000000001 /* PBXTargetDependency */,
+			);
+			name = GSEControllerTests;
+			productName = GSEControllerTests;
+			productReference = T20000000000000000000004 /* GSEControllerTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -106,6 +149,10 @@
 				TargetAttributes = {
 					B100000000000000000000D0 = {
 						CreatedOnToolsVersion = 26.0;
+					};
+					T50000000000000000000001 = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = B100000000000000000000D0;
 					};
 				};
 			};
@@ -123,6 +170,7 @@
 			projectRoot = "";
 			targets = (
 				B100000000000000000000D0 /* GSEController */,
+				T50000000000000000000001 /* GSEControllerTests */,
 			);
 		};
 /* End PBXProject section */
@@ -152,8 +200,34 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		T30000000000000000000001 /* Sources (Tests) */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				T10000000000000000000001 /* ModelsTests.swift in Sources */,
+				T10000000000000000000002 /* FireEngineTests.swift in Sources */,
+				T10000000000000000000003 /* KeySimulatorTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXContainerItemProxy section */
+		T80000000000000000000002 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B100000000000000000000E0 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B100000000000000000000D0;
+			remoteInfo = GSEController;
+		};
+/* End PBXContainerItemProxy section */
+/* Begin PBXTargetDependency section */
+		T80000000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B100000000000000000000D0 /* GSEController */;
+			targetProxy = T80000000000000000000002 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 /* Begin XCBuildConfiguration section */
 		B100000000000000000000F0 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -321,6 +395,40 @@
 			};
 			name = Release;
 		};
+		T60000000000000000000001 /* Debug (Tests) */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jcll.GSEControllerTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/GSEController.app/Contents/MacOS/GSEController";
+			};
+			name = Debug;
+		};
+		T60000000000000000000002 /* Release (Tests) */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jcll.GSEControllerTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/GSEController.app/Contents/MacOS/GSEController";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -338,6 +446,15 @@
 			buildConfigurations = (
 				B100000000000000000000F3 /* Debug */,
 				B100000000000000000000F4 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		T70000000000000000000001 /* Build configuration list for PBXNativeTarget "GSEControllerTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				T60000000000000000000001 /* Debug (Tests) */,
+				T60000000000000000000002 /* Release (Tests) */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
