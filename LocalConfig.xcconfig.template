@@ -1,0 +1,4 @@
+// LocalConfig.xcconfig.template
+// Copy to LocalConfig.xcconfig and set your own prefix.
+BUNDLE_ID_PREFIX = com.example
+PRODUCT_BUNDLE_IDENTIFIER = $(BUNDLE_ID_PREFIX).GSEController

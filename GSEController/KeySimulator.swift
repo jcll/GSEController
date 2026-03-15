@@ -5,17 +5,18 @@ import AppKit
 import os
 
 enum KeySimulator {
-    private static let logger = Logger(subsystem: "com.jcll.gsecontroller", category: "KeySimulator")
+    private static let bundleID = Bundle.main.bundleIdentifier ?? "com.example.gsecontroller"
+    private static let logger = Logger(subsystem: bundleID, category: "KeySimulator")
 
     // All access to the FIFO write fd is serialized through this lock.
     private static let _fd = OSAllocatedUnfairLock<Int32>(initialState: -1)
     private static let _setupStarted = OSAllocatedUnfairLock<Bool>(initialState: false)
     private static let fifoPath: String = {
         FileManager.default.temporaryDirectory
-            .appendingPathComponent("com.jcll.gsecontroller.keys")
+            .appendingPathComponent("\(bundleID).keys")
             .path
     }()
-    private static let agentLabel = "com.jcll.gsecontroller.helper"
+    private static let agentLabel = "\(bundleID).helper"
 
     // Bump this when the helper source changes to force recompilation.
     private static let helperVersion = "v7-tmpdir"

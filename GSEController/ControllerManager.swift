@@ -6,7 +6,7 @@ import Combine
 
 @MainActor
 class ControllerManager: ObservableObject {
-    private static let logger = Logger(subsystem: "com.jcll.gsecontroller", category: "ControllerManager")
+    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.example.gsecontroller", category: "ControllerManager")
 
     @Published var controllerName: String?
     @Published var isConnected = false

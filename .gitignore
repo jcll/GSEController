@@ -7,3 +7,4 @@ DerivedData/
 *.d
 .claude/settings.local.json
 .worktrees/
+LocalConfig.xcconfig

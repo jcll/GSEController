@@ -4,7 +4,7 @@ import os
 
 @MainActor
 class FireEngine: ObservableObject {
-    private static let logger = Logger(subsystem: "com.jcll.gsecontroller", category: "FireEngine")
+    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.example.gsecontroller", category: "FireEngine")
 
     @Published var isFiring = false
 

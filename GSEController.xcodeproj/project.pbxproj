@@ -27,6 +27,7 @@
 		B100000000000000000000A7 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B100000000000000000000A8 /* GSEController.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GSEController.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B100000000000000000000A9 /* FireEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FireEngine.swift; sourceTree = "<group>"; };
+		E072AD09E0B04C459D4A8E32 /* LocalConfig.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = LocalConfig.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -45,6 +46,7 @@
 			children = (
 				B100000000000000000000B1 /* GSEController */,
 				B100000000000000000000B2 /* Products */,
+				E072AD09E0B04C459D4A8E32 /* LocalConfig.xcconfig */,
 			);
 			sourceTree = "<group>";
 		};
@@ -271,6 +273,7 @@
 		};
 		B100000000000000000000F3 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = E072AD09E0B04C459D4A8E32 /* LocalConfig.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -294,6 +297,7 @@
 		};
 		B100000000000000000000F4 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = E072AD09E0B04C459D4A8E32 /* LocalConfig.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
