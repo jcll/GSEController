@@ -19,7 +19,7 @@ Hold a button → the app spams your macro key at a configurable rate. D-pad but
 
 ## Requirements
 
-- macOS 26 (Tahoe) or later
+- macOS 26 Tahoe (currently in beta — not yet available on stable macOS releases)
 - Xcode 16+ (to build)
 - A PS5 DualSense or Xbox controller connected via USB or Bluetooth
 - Accessibility permission (to send key events to WoW)
@@ -60,6 +60,20 @@ If you use ConsolePort alongside this app:
 ## How it works
 
 The app uses Apple's GameController framework to read controller input. Key events are sent via a small helper binary (`KeyHelper`) that is compiled from source at runtime — this allows it to hold the Accessibility permission separately from the sandboxed main app.
+
+## Security model
+
+GSEController has an unusual architecture that security-conscious users should understand before installing:
+
+- **No sandbox:** The app runs without the macOS app sandbox. This is required to compile and launch the KeyHelper binary at runtime. It means the app has unrestricted filesystem and process access under your user account.
+
+- **Runtime C compilation:** On first launch, the app compiles a small C program (`KeyHelper`) using `/usr/bin/cc` and stores the binary at `~/Library/Application Support/GSEController/keyhelper`. The source is embedded in `KeySimulator.swift` — you can audit it before building.
+
+- **Persistent launchd agent:** The helper is registered as a launchd user agent that starts at login and stays running in the background. It receives key events from the main app via a FIFO in your per-user temp directory and posts them via `CGEventPost`.
+
+- **Accessibility permission:** The helper binary (not the main app) holds the Accessibility permission used to send keystrokes. This is standard practice for apps that need to send events to other applications.
+
+If you have concerns about any of this, you can review the full source at [github.com/jcll/GSEController](https://github.com/jcll/GSEController) before building.
 
 ## License
 
