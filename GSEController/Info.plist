@@ -22,5 +22,7 @@
 	<string>6.0</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
+	<key>NSAccessibilityUsageDescription</key>
+	<string>GSE Controller needs Accessibility access to send keystrokes to World of Warcraft.</string>
 </dict>
 </plist>
