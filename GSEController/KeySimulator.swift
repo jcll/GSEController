@@ -10,6 +10,7 @@ enum KeySimulator {
 
     // All access to the FIFO write fd is serialized through this lock.
     private static let _fd = OSAllocatedUnfairLock<Int32>(initialState: -1)
+    private static let _setupStarted = OSAllocatedUnfairLock<Bool>(initialState: false)
     private static let fifoPath = "/tmp/com.jcll.gsecontroller.keys"
     private static let agentLabel = "com.jcll.gsecontroller.helper"
 
@@ -71,10 +72,19 @@ enum KeySimulator {
     // MARK: - Lifecycle
 
     static func ensureHelper() {
-        let alreadyOpen = _fd.withLock { $0 >= 0 }
-        guard !alreadyOpen else { return }
+        let shouldSetup = _setupStarted.withLock { started -> Bool in
+            if started { return false }
+            started = true
+            return true
+        }
+        guard shouldSetup else { return }
         DispatchQueue.global(qos: .userInitiated).async {
             ensureBinary()
+            guard FileManager.default.fileExists(atPath: helperURL.path) else {
+                logger.error("ensureHelper: binary missing after compile attempt, aborting")
+                _setupStarted.withLock { $0 = false }
+                return
+            }
             ensureFIFO()
             if !isAgentRunning() {
                 ensureLaunchdAgent()
@@ -90,6 +100,7 @@ enum KeySimulator {
             fd = -1
             logger.info("FIFO write end closed")
         }
+        _setupStarted.withLock { $0 = false }
     }
 
     // MARK: - Key posting
