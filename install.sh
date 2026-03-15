@@ -28,22 +28,36 @@ EOF
 BUILD_DIR=$(xcodebuild -project GSEController.xcodeproj \
     -scheme GSEController \
     -configuration Release \
-    -showBuildSettings 2>/dev/null \
-    | grep -m1 'BUILT_PRODUCTS_DIR' | sed 's/.*= //')
+    -showBuildSettings 2>&1 \
+    | awk '/BUILT_PRODUCTS_DIR =/ { print $NF; exit }')
+
+if [ -z "$BUILD_DIR" ]; then
+    echo "❌  Could not determine BUILT_PRODUCTS_DIR — is Xcode installed?"
+    exit 1
+fi
 
 echo "🔨  Building release..."
-xcodebuild -project GSEController.xcodeproj \
+if ! xcodebuild -project GSEController.xcodeproj \
            -scheme GSEController \
            -configuration Release \
            build \
-           2>&1 | grep -Ev "^$|^note:|appintentsmetadata|^    " | grep -E "error:|BUILD|warning:" || true
+           2>&1 | grep -Ev "^$|^note:|appintentsmetadata|^    " | grep -E "error:|BUILD|warning:"; then
+    echo "❌  Build failed"
+    exit 1
+fi
 
 APP_SRC="$BUILD_DIR/GSEController.app"
 APP_DST="/Applications/GSEController.app"
 
+if [ ! -d "$APP_SRC" ]; then
+    echo "❌  Built app not found at $APP_SRC"
+    exit 1
+fi
+
 echo "📦  Installing to /Applications..."
 [ -d "$APP_DST" ] && rm -rf "$APP_DST"
 cp -r "$APP_SRC" "$APP_DST"
+xattr -cr "$APP_DST"
 
 echo ""
 echo "✅  GSE Controller installed!"
