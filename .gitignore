@@ -5,3 +5,5 @@ DerivedData/
 .build/
 *.o
 *.d
+.claude/settings.local.json
+.worktrees/
