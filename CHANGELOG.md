@@ -4,7 +4,7 @@ All notable user-facing changes to GSEController are documented here.
 
 ---
 
-## Unreleased
+## v1.0.0 — 2026-03-15
 
 ### Added
 - Unit test suite (`GSEControllerTests`) — 29 tests covering `Models`, `FireEngine`, and `KeySimulator` pure logic using Swift Testing framework
