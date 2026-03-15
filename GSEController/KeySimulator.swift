@@ -1,12 +1,11 @@
 import Foundation
 import CoreGraphics
-import ApplicationServices
+@preconcurrency import ApplicationServices
 import AppKit
 import os
 
 enum KeySimulator {
     private static let logger = Logger(subsystem: "com.jcll.gsecontroller", category: "KeySimulator")
-    private static let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
 
     // All access to the FIFO write fd is serialized through this lock.
     private static let _fd = OSAllocatedUnfairLock<Int32>(initialState: -1)
@@ -160,7 +159,8 @@ enum KeySimulator {
     }
 
     static func requestAccessibility() {
-        let options = [promptKey: true] as CFDictionary
+        let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+        let options = [key: true] as CFDictionary
         AXIsProcessTrustedWithOptions(options)
     }
 

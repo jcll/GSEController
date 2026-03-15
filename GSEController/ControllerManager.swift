@@ -4,6 +4,7 @@ import AppKit
 import os
 import Combine
 
+@MainActor
 class ControllerManager: ObservableObject {
     private static let logger = Logger(subsystem: "com.jcll.gsecontroller", category: "ControllerManager")
 
@@ -76,25 +77,21 @@ class ControllerManager: ObservableObject {
 
     @objc private func controllerDisconnected(_ notification: Notification) {
         Self.logger.info("Controller disconnected")
-        DispatchQueue.main.async {
-            self.controller = nil
-            self.controllerName = nil
-            self.isConnected = false
-            self.stop()
-            self.statusMessage = "Controller disconnected"
-        }
+        controller = nil
+        controllerName = nil
+        isConnected = false
+        stop()
+        statusMessage = "Controller disconnected"
     }
 
     private func connectController(_ gc: GCController) {
         Self.logger.info("Controller connected: \(gc.vendorName ?? "unknown", privacy: .public)")
-        DispatchQueue.main.async {
-            self.controller = gc
-            self.controllerName = gc.vendorName ?? "Controller"
-            self.isConnected = true
-            self.statusMessage = "Controller connected"
-            if self.isRunning, let group = self.activeGroup {
-                self.attachHandlers(for: group)
-            }
+        controller = gc
+        controllerName = gc.vendorName ?? "Controller"
+        isConnected = true
+        statusMessage = "Controller connected"
+        if isRunning, let group = activeGroup {
+            attachHandlers(for: group)
         }
     }
 
@@ -197,7 +194,7 @@ class ControllerManager: ObservableObject {
 
         for binding in group.bindings {
             buttonInput(for: binding.button, on: gamepad)?.pressedChangedHandler = { [weak self] _, _, pressed in
-                DispatchQueue.main.async {
+                Task { @MainActor [weak self] in
                     self?.handleButton(binding: binding, pressed: pressed)
                 }
             }
@@ -239,9 +236,9 @@ class ControllerManager: ObservableObject {
 
     func checkAccessibility() {
         hasAccessibility = KeySimulator.isAccessibilityEnabled
-        DispatchQueue.global(qos: .userInitiated).async {
+        Task.detached(priority: .userInitiated) {
             let helperAx = KeySimulator.isHelperAccessibilityEnabled
-            DispatchQueue.main.async { self.hasHelperAccessibility = helperAx }
+            await MainActor.run { self.hasHelperAccessibility = helperAx }
         }
     }
 }

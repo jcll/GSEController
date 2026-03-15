@@ -2,6 +2,7 @@ import Foundation
 import AppKit
 import os
 
+@MainActor
 class FireEngine: ObservableObject {
     private static let logger = Logger(subsystem: "com.jcll.gsecontroller", category: "FireEngine")
 
@@ -18,7 +19,7 @@ class FireEngine: ObservableObject {
 
     private var activeTimers: [ControllerButton: DispatchSourceTimer] = [:]
     private var heldModifiers: Set<KeyModifier> = []
-    private var activity: NSObjectProtocol?
+    nonisolated(unsafe) private var activity: NSObjectProtocol?
     private let fireQueue = DispatchQueue(label: "com.jcll.gsecontroller.fire", qos: .userInteractive)
 
     deinit {
@@ -45,9 +46,9 @@ class FireEngine: ObservableObject {
                 lastAccessCheck = now
                 guard KeySimulator.isAccessibilityEnabled else {
                     Self.logger.warning("Accessibility permission revoked, stopping")
-                    DispatchQueue.main.async {
-                        self.stopAll()
-                        self.onAccessibilityRevoked?()
+                    Task { @MainActor [weak self] in
+                        self?.stopAll()
+                        self?.onAccessibilityRevoked?()
                     }
                     return
                 }
