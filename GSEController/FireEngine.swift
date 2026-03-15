@@ -4,7 +4,8 @@ import os
 
 @MainActor
 class FireEngine: ObservableObject {
-    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.example.gsecontroller", category: "FireEngine")
+    private static let bundleID = Bundle.main.bundleIdentifier ?? "com.example.gsecontroller"
+    private static let logger = Logger(subsystem: bundleID, category: "FireEngine")
 
     @Published var isFiring = false
 
@@ -20,7 +21,7 @@ class FireEngine: ObservableObject {
     private var activeTimers: [ControllerButton: DispatchSourceTimer] = [:]
     private var heldModifiers: Set<KeyModifier> = []
     nonisolated(unsafe) private var activity: NSObjectProtocol?
-    private let fireQueue = DispatchQueue(label: "com.jcll.gsecontroller.fire", qos: .userInteractive)
+    private let fireQueue = DispatchQueue(label: "\(FireEngine.bundleID).fire", qos: .userInteractive)
 
     deinit {
         for (_, timer) in activeTimers { timer.cancel() }

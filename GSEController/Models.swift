@@ -187,7 +187,7 @@ class ProfileStore: ObservableObject {
         groups.first { $0.id == activeGroupId }
     }
 
-    private static let logger = Logger(subsystem: "com.jcll.gsecontroller", category: "ProfileStore")
+    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.example.gsecontroller", category: "ProfileStore")
 
     init() {
         // Migration from pre-1.x "profiles" UserDefaults key
