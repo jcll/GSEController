@@ -4,6 +4,8 @@ A macOS app that turns your PS5 (or Xbox) controller into a rapid-fire keyboard 
 
 Hold a button → the app spams your macro key at a configurable rate. D-pad buttons can hold modifier keys (Alt/Shift/Ctrl) to activate modifier blocks inside your GSE rotation.
 
+![GSEController screenshot](screenshot.png)
+
 ## Features
 
 - **Multiple profiles** — one per class/spec, switch from the toolbar
