@@ -3,6 +3,7 @@ import GameController
 import AppKit
 import os
 import Combine
+import UserNotifications
 
 @MainActor
 class ControllerManager: ObservableObject {
@@ -15,6 +16,8 @@ class ControllerManager: ObservableObject {
     @Published var statusMessage = "Ready"
     @Published var hasAccessibility = false
     @Published var hasHelperAccessibility = false
+    @Published var batteryLevel: Float? = nil
+    @Published var batteryCharging: Bool = false
     @Published var requireWoWFocus: Bool {
         didSet {
             UserDefaults.standard.set(requireWoWFocus, forKey: "requireWoWFocus")
@@ -26,17 +29,21 @@ class ControllerManager: ObservableObject {
     private var controller: GCController?
     private var activeGroup: ProfileGroup?
     private var firingObserver: AnyCancellable?
+    // nonisolated(unsafe) so deinit can invalidate it without a MainActor hop
+    nonisolated(unsafe) private var batteryTimer: Timer?
+    private let dualSenseBattery = DualSenseBatteryMonitor()
+    private var lowBatteryNotified = false
 
     init() {
         self.requireWoWFocus = UserDefaults.standard.object(forKey: "requireWoWFocus") as? Bool ?? true
-        hasAccessibility = KeySimulator.isAccessibilityEnabled
         GCController.shouldMonitorBackgroundEvents = true
         setupNotifications()
         setupAppTracking()
-        if let existing = GCController.controllers().first {
-            connectController(existing)
-        }
+        setupPermissionRecheck()
         KeySimulator.ensureHelper()
+
+        // Capture before the Task so we don't race with a connect notification.
+        let existing = GCController.controllers().first
 
         fireEngine.requireWoWFocus = requireWoWFocus
         fireEngine.onAccessibilityRevoked = { [weak self] in
@@ -52,6 +59,23 @@ class ControllerManager: ObservableObject {
             } else if let group = self.activeGroup {
                 self.statusMessage = "Active — \(group.name)"
             }
+        }
+
+        // Defer @Published mutations out of init — ControllerManager is a @StateObject so
+        // init runs during SwiftUI's first render pass. Any objectWillChange.send() here
+        // triggers "Publishing changes from within view updates" warnings.
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.hasAccessibility = KeySimulator.isAccessibilityEnabled
+            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+            self.dualSenseBattery.onUpdate = { [weak self] level, charging in
+                guard let self else { return }
+                self.batteryLevel = level
+                self.batteryCharging = charging
+                self.checkLowBattery(level: level, charging: charging)
+            }
+            self.dualSenseBattery.start()
+            if let gc = existing { self.connectController(gc) }
         }
     }
 
@@ -80,6 +104,8 @@ class ControllerManager: ObservableObject {
         controller = nil
         controllerName = nil
         isConnected = false
+        lowBatteryNotified = false
+        stopBatteryMonitoring()
         stop()
         statusMessage = "Controller disconnected"
     }
@@ -90,9 +116,25 @@ class ControllerManager: ObservableObject {
         controllerName = gc.vendorName ?? "Controller"
         isConnected = true
         statusMessage = "Controller connected"
+        startBatteryMonitoring()
         if isRunning, let group = activeGroup {
             attachHandlers(for: group)
         }
+    }
+
+    // MARK: - Permission Recheck
+
+    private func setupPermissionRecheck() {
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(appDidBecomeActive),
+            name: NSApplication.didBecomeActiveNotification, object: nil
+        )
+    }
+
+    @objc private func appDidBecomeActive() {
+        guard !hasAccessibility || !hasHelperAccessibility else { return }
+        // Defer to avoid publishing @Published changes during a view update cycle.
+        Task { @MainActor [weak self] in self?.checkAccessibility() }
     }
 
     // MARK: - WoW Focus Tracking
@@ -128,7 +170,65 @@ class ControllerManager: ObservableObject {
         return false
     }
 
+    // MARK: - Battery Monitoring
+
+    private func startBatteryMonitoring() {
+        batteryTimer?.invalidate()
+        // Poll immediately and every 30s. For DualSense, GCDeviceBattery always
+        // returns 0; DualSenseBatteryMonitor handles it via HID input reports or
+        // device property reads and writes batteryLevel directly through onUpdate.
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            self?.updateBattery()
+            self?.dualSenseBattery.pollDeviceProperty()
+        }
+        batteryTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.updateBattery()
+                self?.dualSenseBattery.pollDeviceProperty()
+            }
+        }
+    }
+
+    private func checkLowBattery(level: Float, charging: Bool) {
+        if charging || level > 0.25 {
+            lowBatteryNotified = false
+            return
+        }
+        guard level <= 0.20, !lowBatteryNotified else { return }
+        lowBatteryNotified = true
+        let content = UNMutableNotificationContent()
+        content.title = "Controller Battery Low"
+        content.body = "DualSense is at \(Int(level * 100))% — plug in to keep playing."
+        content.sound = .default
+        let request = UNNotificationRequest(identifier: "com.gsecontroller.lowbattery", content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request)
+        Self.logger.info("Low battery notification sent (\(Int(level * 100))%)")
+    }
+
+    private func stopBatteryMonitoring() {
+        batteryTimer?.invalidate()
+        batteryTimer = nil
+        batteryLevel = nil
+        batteryCharging = false
+    }
+
+    private func updateBattery() {
+        guard let battery = controller?.battery else {
+            batteryLevel = nil
+            batteryCharging = false
+            return
+        }
+        // Only overwrite if GCDeviceBattery has real data.
+        // DualSense always returns 0 here; DualSenseBatteryMonitor handles it separately.
+        if battery.batteryLevel > 0 {
+            batteryLevel = battery.batteryLevel
+            batteryCharging = battery.batteryState == .charging
+        }
+    }
+
     deinit {
+        batteryTimer?.invalidate()
         NotificationCenter.default.removeObserver(self)
         NSWorkspace.shared.notificationCenter.removeObserver(self)
     }

@@ -4,6 +4,20 @@ All notable user-facing changes to GSEController are documented here.
 
 ---
 
+## Unreleased
+
+### Added
+- **DualSense battery monitoring** — battery level and charging status now shown in the controller card. Uses `IOHIDDeviceGetReport` to pull the full BT input report (0x31) directly, working around macOS `GCDeviceBattery` always returning 0% for DualSense.
+- **Low battery notification** — sends a macOS notification when the controller drops to or below 20%, with hysteresis (resets above 25% or when charging) to avoid repeated alerts.
+- **Profile sidebar** — replaced the flat toolbar `Picker` with a `NavigationSplitView` sidebar for profile selection; profiles are listed with `+`/`−` controls and support right-click to delete.
+- **Unified accessibility setup card** — replaces sequential banners with a single card showing the status of both the app and Key Helper permissions simultaneously, with an auto-recheck on app focus.
+
+### Fixed
+- "Publishing changes from within view updates" console warnings on launch — `@Published` mutations in `ControllerManager.init()` are now deferred into a `Task { @MainActor }`.
+- Spurious `+` toolbar button appearing in the top-right of the window with no action — removed `ToolbarItem(placement: .primaryAction)` from the sidebar; controls are now inline footer buttons.
+
+---
+
 ## v1.0.0 — 2026-03-15
 
 ### Added

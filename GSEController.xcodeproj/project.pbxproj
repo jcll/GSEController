@@ -14,6 +14,7 @@
 		B10000000000000000000A0E /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000A4 /* Models.swift */; };
 		B10000000000000000000A0F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000A7 /* Assets.xcassets */; };
 		B10000000000000000000A10 /* FireEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000A9 /* FireEngine.swift */; };
+		B10000000000000000000A11 /* DualSenseBatteryMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AA /* DualSenseBatteryMonitor.swift */; };
 		T10000000000000000000001 /* ModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T20000000000000000000001 /* ModelsTests.swift */; };
 		T10000000000000000000002 /* FireEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T20000000000000000000002 /* FireEngineTests.swift */; };
 		T10000000000000000000003 /* KeySimulatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T20000000000000000000003 /* KeySimulatorTests.swift */; };
@@ -30,6 +31,7 @@
 		B100000000000000000000A7 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B100000000000000000000A8 /* GSEController.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GSEController.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B100000000000000000000A9 /* FireEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FireEngine.swift; sourceTree = "<group>"; };
+		B100000000000000000000AA /* DualSenseBatteryMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DualSenseBatteryMonitor.swift; sourceTree = "<group>"; };
 		E072AD09E0B04C459D4A8E32 /* LocalConfig.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = LocalConfig.xcconfig; sourceTree = "<group>"; };
 		T20000000000000000000001 /* ModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelsTests.swift; sourceTree = "<group>"; };
 		T20000000000000000000002 /* FireEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FireEngineTests.swift; sourceTree = "<group>"; };
@@ -74,6 +76,7 @@
 				B100000000000000000000A9 /* FireEngine.swift */,
 				B100000000000000000000A3 /* KeySimulator.swift */,
 				B100000000000000000000A4 /* Models.swift */,
+				B100000000000000000000AA /* DualSenseBatteryMonitor.swift */,
 				B100000000000000000000A7 /* Assets.xcassets */,
 				B100000000000000000000A5 /* Info.plist */,
 				B100000000000000000000A6 /* GSEController.entitlements */,
@@ -197,6 +200,7 @@
 				B10000000000000000000A0D /* KeySimulator.swift in Sources */,
 				B10000000000000000000A0E /* Models.swift in Sources */,
 				B10000000000000000000A10 /* FireEngine.swift in Sources */,
+				B10000000000000000000A11 /* DualSenseBatteryMonitor.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

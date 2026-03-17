@@ -4,71 +4,90 @@ struct ContentView: View {
     @StateObject private var store = ProfileStore()
     @StateObject private var controller = ControllerManager()
     @State private var showingCPInfo = false
-    @State private var showingDeleteConfirm = false
     @State private var showingNewGroup = false
 
     var body: some View {
-        GlassEffectContainer {
-            VStack(spacing: 20) {
-                controllerCard
-
-                if !controller.hasAccessibility {
-                    accessibilityBanner
-                } else if !controller.hasHelperAccessibility {
-                    helperAccessibilityBanner
-                }
-
-                if let group = store.activeGroup {
-                    GroupEditorCard(group: group, onSave: { saved in
-                        if let idx = store.groups.firstIndex(where: { $0.id == saved.id }) {
-                            store.groups[idx] = saved
-                        }
-                    })
-                    .disabled(controller.isRunning)
-                    .opacity(controller.isRunning ? 0.6 : 1.0)
-                }
-
-                optionsRow
-                statusRow
-                startStopButton
-            }
-            .padding(20)
-        }
-        .toolbar {
-            ToolbarItem(placement: .automatic) {
-                Picker("Group", selection: $store.activeGroupId) {
-                    ForEach(store.groups) { g in
-                        Text(g.name).tag(Optional(g.id))
+        NavigationSplitView {
+            VStack(spacing: 0) {
+                List(store.groups, id: \.id, selection: $store.activeGroupId) { g in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(g.name)
+                            .lineLimit(1)
+                        Text("\(g.bindings.count) binding\(g.bindings.count == 1 ? "" : "s")")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                }
-                .labelsHidden()
-                .frame(minWidth: 140)
-            }
-            ToolbarItemGroup(placement: .primaryAction) {
-                Button(action: { showingNewGroup = true }) {
-                    Image(systemName: "plus")
-                }
-                .help("New group")
-
-                if store.groups.count > 1 {
-                    Button(action: { showingDeleteConfirm = true }) {
-                        Image(systemName: "trash")
-                    }
-                    .help("Delete group")
-                    .confirmationDialog(
-                        "Delete \"\(store.activeGroup?.name ?? "group")\"?",
-                        isPresented: $showingDeleteConfirm,
-                        titleVisibility: .visible
-                    ) {
-                        Button("Delete", role: .destructive) {
-                            if let g = store.activeGroup { store.deleteGroup(g) }
+                    .contextMenu {
+                        if store.groups.count > 1 {
+                            Button(role: .destructive) {
+                                store.deleteGroup(g)
+                            } label: {
+                                Label("Delete \"\(g.name)\"", systemImage: "trash")
+                            }
                         }
                     }
                 }
+
+                Divider()
+
+                HStack(spacing: 0) {
+                    Button {
+                        showingNewGroup = true
+                    } label: {
+                        Image(systemName: "plus")
+                            .frame(width: 28, height: 24)
+                    }
+                    .buttonStyle(.plain)
+                    .help("New profile")
+
+                    if store.groups.count > 1,
+                       let id = store.activeGroupId,
+                       let group = store.groups.first(where: { $0.id == id }) {
+                        Divider().frame(height: 16)
+                        Button {
+                            store.deleteGroup(group)
+                        } label: {
+                            Image(systemName: "minus")
+                                .frame(width: 28, height: 24)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Delete profile")
+                    }
+
+                    Spacer()
+                }
+                .padding(.horizontal, 4)
+                .frame(height: 28)
+            }
+            .navigationTitle("Profiles")
+        } detail: {
+            GlassEffectContainer {
+                VStack(spacing: 20) {
+                    controllerCard
+
+                    if !controller.hasAccessibility || !controller.hasHelperAccessibility {
+                        permissionSetupCard
+                    }
+
+                    if let group = store.activeGroup {
+                        GroupEditorCard(group: group, onSave: { saved in
+                            if let idx = store.groups.firstIndex(where: { $0.id == saved.id }) {
+                                store.groups[idx] = saved
+                            }
+                        })
+                        .disabled(controller.isRunning)
+                        .opacity(controller.isRunning ? 0.6 : 1.0)
+                    }
+
+                    optionsRow
+                    statusRow
+                    startStopButton
+                }
+                .padding(20)
             }
         }
-        .frame(minWidth: 460, maxWidth: 460, minHeight: 500)
-        .onAppear { controller.checkAccessibility() }
+        .frame(minWidth: 640, minHeight: 500)
+        .onAppear { Task { @MainActor in controller.checkAccessibility() } }
         .sheet(isPresented: $showingCPInfo) { consolePortSheet }
         .sheet(isPresented: $showingNewGroup) {
             NewGroupSheet(store: store, isPresented: $showingNewGroup)
@@ -93,6 +112,10 @@ struct ContentView: View {
 
             Spacer()
 
+            if let level = controller.batteryLevel {
+                batteryIndicator(level: level, charging: controller.batteryCharging)
+            }
+
             Circle()
                 .fill(controller.isConnected ? .green : .red)
                 .frame(width: 10, height: 10)
@@ -101,63 +124,122 @@ struct ContentView: View {
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
     }
 
-    // MARK: - Accessibility Banner
-
-    private var accessibilityBanner: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
-            Text("Accessibility access required")
-                .font(.callout)
-            Spacer()
-            Button("Grant Access") {
-                KeySimulator.requestAccessibility()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                    controller.checkAccessibility()
-                }
-            }
-            .buttonStyle(.glass)
-            .controlSize(.small)
+    private func batteryIndicator(level: Float, charging: Bool) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: batteryIconName(level: level, charging: charging))
+                .foregroundStyle(batteryColor(level: level, charging: charging))
+            Text("\(Int(level * 100))%")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
         }
-        .padding(12)
-        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
     }
 
-    // MARK: - Helper Accessibility Banner
+    private func batteryIconName(level: Float, charging: Bool) -> String {
+        if charging { return "battery.100percent.bolt" }
+        switch level {
+        case 0.75...: return "battery.100percent"
+        case 0.50...: return "battery.75percent"
+        case 0.25...: return "battery.50percent"
+        case 0.10...: return "battery.25percent"
+        default:      return "battery.0percent"
+        }
+    }
 
-    private var helperAccessibilityBanner: some View {
-        VStack(alignment: .leading, spacing: 8) {
+    private func batteryColor(level: Float, charging: Bool) -> Color {
+        if charging { return .green }
+        if level <= 0.15 { return .red }
+        if level <= 0.30 { return .orange }
+        return .secondary
+    }
+
+    // MARK: - Unified Permission Setup Card
+
+    private var permissionSetupCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
-                Text("Key helper needs Accessibility access")
-                    .font(.callout)
+                Text("Accessibility Setup Required")
+                    .font(.callout.weight(.semibold))
                 Spacer()
             }
-            Text("Add the helper binary to Accessibility in System Settings so it can send key presses to other apps.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            HStack(spacing: 8) {
-                Button("Open Settings") {
-                    KeySimulator.openAccessibilitySettings()
+
+            Divider()
+
+            permissionRow(
+                granted: controller.hasAccessibility,
+                label: "GSEController",
+                detail: "Allows the app to receive controller input in the background.",
+                actions: {
+                    Button("Grant Access") {
+                        KeySimulator.requestAccessibility()
+                    }
+                    .buttonStyle(.glass)
+                    .controlSize(.small)
                 }
-                .buttonStyle(.glass)
-                .controlSize(.small)
-                Button("Reveal Helper") {
-                    KeySimulator.revealHelperInFinder()
+            )
+
+            permissionRow(
+                granted: controller.hasHelperAccessibility,
+                label: "Key Helper binary",
+                detail: "Sends keystrokes to WoW. Open Accessibility settings, then drag the helper in.",
+                actions: {
+                    Button("Open Settings") {
+                        KeySimulator.openAccessibilitySettings()
+                        KeySimulator.revealHelperInFinder()
+                    }
+                    .buttonStyle(.glass)
+                    .controlSize(.small)
                 }
-                .buttonStyle(.glass)
-                .controlSize(.small)
+            )
+
+            Divider()
+
+            HStack {
+                Text("Rechecks automatically when you return to this app.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Spacer()
-                Button("Recheck") {
+                Button("Check Now") {
                     controller.checkAccessibility()
                 }
                 .buttonStyle(.glass)
                 .controlSize(.small)
             }
         }
-        .padding(12)
-        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+        .padding(14)
+        .background(.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func permissionRow<Actions: View>(
+        granted: Bool,
+        label: String,
+        detail: String,
+        @ViewBuilder actions: () -> Actions
+    ) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: granted ? "checkmark.circle.fill" : "circle")
+                .foregroundStyle(granted ? .green : .secondary)
+                .font(.body)
+                .padding(.top, 1)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.callout)
+                if !granted {
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer()
+
+            if !granted {
+                actions()
+            }
+        }
     }
 
     // MARK: - Options
