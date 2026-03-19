@@ -209,7 +209,8 @@ struct ContentView: View {
             }
         }
         .padding(14)
-        .background(.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 12))
+        .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.orange.opacity(0.3), lineWidth: 0.5))
     }
 
     private func permissionRow<Actions: View>(
@@ -256,6 +257,9 @@ struct ContentView: View {
             .foregroundStyle(.secondary)
             .help("ConsolePort compatibility")
         }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
     }
 
     // MARK: - ConsolePort Info Sheet
@@ -839,56 +843,58 @@ struct NewGroupSheet: View {
     ]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("New Profile — Choose a Starting Setup")
-                .font(.title3.weight(.semibold))
+        GlassEffectContainer {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("New Profile — Choose a Starting Setup")
+                    .font(.title3.weight(.semibold))
 
-            LazyVGrid(columns: columns, spacing: 12) {
-                ForEach(templates) { template in
-                    Button(action: {
-                        store.addGroup(template.group)
-                        isPresented = false
-                    }) {
-                        HStack(alignment: .top, spacing: 10) {
-                            Image(systemName: template.icon)
-                                .font(.title2)
-                                .foregroundStyle(.blue)
-                                .frame(width: 28)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(template.name)
-                                    .font(.callout.weight(.semibold))
-                                    .multilineTextAlignment(.leading)
-                                Text(template.description)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .multilineTextAlignment(.leading)
+                LazyVGrid(columns: columns, spacing: 12) {
+                    ForEach(templates) { template in
+                        Button(action: {
+                            store.addGroup(template.group)
+                            isPresented = false
+                        }) {
+                            HStack(alignment: .top, spacing: 10) {
+                                Image(systemName: template.icon)
+                                    .font(.title2)
+                                    .foregroundStyle(.blue)
+                                    .frame(width: 28)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(template.name)
+                                        .font(.callout.weight(.semibold))
+                                        .multilineTextAlignment(.leading)
+                                    Text(template.description)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .multilineTextAlignment(.leading)
+                                }
+                                Spacer(minLength: 0)
                             }
-                            Spacer(minLength: 0)
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10))
                         }
-                        .padding(10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
+                }
+
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                    Text("Set the key to match your macro keybind after selecting a template.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack {
+                    Spacer()
+                    Button("Cancel") { isPresented = false }
+                        .buttonStyle(.glass)
                 }
             }
-
-            HStack(spacing: 6) {
-                Image(systemName: "exclamationmark.triangle")
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
-                Text("Set the key to match your macro keybind after selecting a template.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            HStack {
-                Spacer()
-                Button("Cancel") { isPresented = false }
-                    .buttonStyle(.glass)
-            }
+            .padding(24)
+            .frame(width: 460)
         }
-        .padding(24)
-        .frame(width: 460)
     }
 }
