@@ -5,9 +5,10 @@ struct ContentView: View {
     @StateObject private var controller = ControllerManager()
     @State private var showingCPInfo = false
     @State private var showingNewGroup = false
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             VStack(spacing: 0) {
                 List(store.groups, id: \.id, selection: $store.activeGroupId) { g in
                     VStack(alignment: .leading, spacing: 2) {
