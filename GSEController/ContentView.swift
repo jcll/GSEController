@@ -310,22 +310,35 @@ struct ContentView: View {
     // MARK: - Status
 
     private var statusRow: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(statusColor)
-                .frame(width: 8, height: 8)
-                .scaleEffect(controller.isFiring ? 1.4 : 1.0)
-                .animation(
-                    controller.isFiring
-                        ? .easeInOut(duration: 0.3).repeatForever(autoreverses: true)
-                        : .default,
-                    value: controller.isFiring
-                )
+        HStack(spacing: 8) {
+            ZStack {
+                // Ripple ring — expands from 1x to 1.8x and fades out while firing
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 10, height: 10)
+                    .scaleEffect(controller.isFiring ? 1.8 : 1.0)
+                    .opacity(controller.isFiring ? 0.0 : 0.3)
+                    .animation(
+                        controller.isFiring
+                            ? .easeOut(duration: 0.9).repeatForever(autoreverses: false)
+                            : .easeOut(duration: 0.3),
+                        value: controller.isFiring
+                    )
+                // Solid dot — always visible
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 10, height: 10)
+            }
             Text(controller.statusMessage)
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .fontWeight(controller.isFiring ? .semibold : .regular)
+                .foregroundStyle(controller.isFiring ? .primary : .secondary)
+                .animation(.easeInOut(duration: 0.2), value: controller.isFiring)
             Spacer()
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10))
     }
 
     private var statusColor: Color {
