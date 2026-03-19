@@ -60,7 +60,8 @@ struct ContentView: View {
                 .padding(.horizontal, 4)
                 .frame(height: 28)
             }
-            .navigationTitle("Profiles")
+            .navigationTitle("")
+            .toolbar(removing: .sidebarToggle)
         } detail: {
             GlassEffectContainer {
                 VStack(spacing: 20) {
@@ -85,6 +86,18 @@ struct ContentView: View {
                     startStopButton
                 }
                 .padding(20)
+            }
+            .toolbar {
+                ToolbarItem(placement: .navigation) {
+                    Button {
+                        withAnimation {
+                            columnVisibility = columnVisibility == .all ? .detailOnly : .all
+                        }
+                    } label: {
+                        Image(systemName: "sidebar.left")
+                    }
+                    .help("Toggle Sidebar")
+                }
             }
         }
         .frame(minWidth: 640, minHeight: 500)
