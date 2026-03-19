@@ -50,7 +50,6 @@ class FireEngine: ObservableObject {
         if axMonitorTask == nil {
             axMonitorTask = Task { [weak self] in
                 while !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(3))
                     guard let self, !Task.isCancelled else { break }
                     let ok = KeySimulator.isAccessibilityEnabled
                     self._axEnabled.withLock { $0 = ok }
@@ -60,6 +59,7 @@ class FireEngine: ObservableObject {
                         self.onAccessibilityRevoked?()
                         break
                     }
+                    try? await Task.sleep(for: .seconds(3))
                 }
             }
         }

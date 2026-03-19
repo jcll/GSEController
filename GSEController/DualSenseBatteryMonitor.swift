@@ -37,7 +37,13 @@ final class DualSenseBatteryMonitor: @unchecked Sendable {
     var onUpdate: ((Float, Bool) -> Void)?
 
     private var manager: IOHIDManager?
-    // Heap-allocated so the pointer stays stable across C callback registrations.
+    // Per-device heap buffers for IOHIDDeviceRegisterInputReportCallback.
+    // Each attached device gets its own buffer so concurrent HID reports from
+    // multiple DualSense controllers don't race on a shared pointer.
+    // Allocated in attach(_:), freed in stop().
+    private var callbackBuffers: [UnsafeMutablePointer<UInt8>] = []
+    // Separate buffer used only for synchronous IOHIDDeviceGetReport calls in
+    // pollDeviceProperty — always called on the main thread, no race possible.
     private let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: 256)
     private var lastParsed = Date.distantPast
 
@@ -77,6 +83,8 @@ final class DualSenseBatteryMonitor: @unchecked Sendable {
         IOHIDManagerUnscheduleFromRunLoop(m, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
         IOHIDManagerClose(m, IOOptionBits(kIOHIDOptionsTypeNone))
         manager = nil
+        for b in callbackBuffers { b.deallocate() }
+        callbackBuffers.removeAll()
     }
 
     private func isDualSense(_ device: IOHIDDevice) -> Bool {
@@ -86,8 +94,10 @@ final class DualSenseBatteryMonitor: @unchecked Sendable {
     }
 
     private func attach(_ device: IOHIDDevice) {
+        let devBuf = UnsafeMutablePointer<UInt8>.allocate(capacity: 256)
+        callbackBuffers.append(devBuf)
         IOHIDDeviceRegisterInputReportCallback(
-            device, buf, 256,
+            device, devBuf, 256,
             { ctx, _, _, _, reportID, data, length in
                 guard let ctx else { return }
                 Unmanaged<DualSenseBatteryMonitor>.fromOpaque(ctx).takeUnretainedValue()

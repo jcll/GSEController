@@ -27,7 +27,8 @@ class ControllerManager: ObservableObject {
 
     private let fireEngine = FireEngine()
     private var controller: GCController?
-    private var activeGroup: ProfileGroup?
+    private var activeGroupName: String?
+    private var activeBindings: [MacroBinding]?
     private var firingObserver: AnyCancellable?
     // nonisolated(unsafe) so deinit can invalidate it without a MainActor hop
     nonisolated(unsafe) private var batteryTimer: Timer?
@@ -56,8 +57,8 @@ class ControllerManager: ObservableObject {
             guard let self, self.isRunning else { return }
             if firing {
                 self.statusMessage = "FIRING"
-            } else if let group = self.activeGroup {
-                self.statusMessage = "Active — \(group.name)"
+            } else if let name = self.activeGroupName {
+                self.statusMessage = "Active — \(name)"
             }
         }
 
@@ -117,8 +118,8 @@ class ControllerManager: ObservableObject {
         isConnected = true
         statusMessage = "Controller connected"
         startBatteryMonitoring()
-        if isRunning, let group = activeGroup {
-            attachHandlers(for: group)
+        if isRunning, let bindings = activeBindings {
+            attachHandlers(for: bindings)
         }
     }
 
@@ -246,23 +247,23 @@ class ControllerManager: ObservableObject {
             statusMessage = "Grant Accessibility access, then try again"
             return
         }
-        activeGroup = group
+        activeGroupName = group.name
+        activeBindings = group.bindings
         isRunning = true
         KeySimulator.ensureHelper()
         fireEngine.requireWoWFocus = requireWoWFocus
         refreshWoWFocus()
-        let bindingCount = group.bindings.count
-        Self.logger.info("Started group \"\(group.name, privacy: .public)\" with \(bindingCount) binding(s)")
+        Self.logger.info("Started group \"\(group.name, privacy: .public)\" with \(group.bindings.count) binding(s)")
         statusMessage = "Active — \(group.name)"
-        attachHandlers(for: group)
+        attachHandlers(for: group.bindings)
     }
 
     func stop() {
         fireEngine.stopAll()
         clearButtonHandlers()
         isRunning = false
-        activeGroup = nil
-        KeySimulator.stopHelper()
+        activeGroupName = nil
+        activeBindings = nil
         if isConnected {
             statusMessage = "Stopped"
         }
@@ -288,11 +289,11 @@ class ControllerManager: ObservableObject {
         }
     }
 
-    private func attachHandlers(for group: ProfileGroup) {
+    private func attachHandlers(for bindings: [MacroBinding]) {
         guard let gamepad = controller?.extendedGamepad else { return }
         clearButtonHandlers()
 
-        for binding in group.bindings {
+        for binding in bindings {
             buttonInput(for: binding.button, on: gamepad)?.pressedChangedHandler = { [weak self] _, _, pressed in
                 Task { @MainActor [weak self] in
                     self?.handleButton(binding: binding, pressed: pressed)
@@ -336,9 +337,9 @@ class ControllerManager: ObservableObject {
 
     func checkAccessibility() {
         hasAccessibility = KeySimulator.isAccessibilityEnabled
-        Task.detached(priority: .userInitiated) {
+        Task.detached(priority: .userInitiated) { [weak self] in
             let helperAx = KeySimulator.isHelperAccessibilityEnabled
-            await MainActor.run { self.hasHelperAccessibility = helperAx }
+            await MainActor.run { self?.hasHelperAccessibility = helperAx }
         }
     }
 }
