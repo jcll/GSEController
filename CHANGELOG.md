@@ -4,17 +4,32 @@ All notable user-facing changes to GSEController are documented here.
 
 ---
 
-## Unreleased
+## v1.1.0 — 2026-03-20
 
 ### Added
 - **DualSense battery monitoring** — battery level and charging status now shown in the controller card. Uses `IOHIDDeviceGetReport` to pull the full BT input report (0x31) directly, working around macOS `GCDeviceBattery` always returning 0% for DualSense.
 - **Low battery notification** — sends a macOS notification when the controller drops to or below 20%, with hysteresis (resets above 25% or when charging) to avoid repeated alerts.
 - **Profile sidebar** — replaced the flat toolbar `Picker` with a `NavigationSplitView` sidebar for profile selection; profiles are listed with `+`/`−` controls and support right-click to delete.
+- **Profile export / import** — Export and Import buttons in the sidebar toolbar write/read profiles as JSON via a save/open panel, making it easy to back up or share macro configs.
 - **Unified accessibility setup card** — replaces sequential banners with a single card showing the status of both the app and Key Helper permissions simultaneously, with an auto-recheck on app focus.
+- **FIFO health banner** — a yellow warning banner appears in the UI when the key-event delivery pipe to the helper is unhealthy, and clears automatically on recovery.
+- **Graceful shutdown** — a SIGTERM handler releases any held modifier keys and stops the helper binary cleanly before the app exits.
+- **Start/Stop button disabled caption** — the button now shows an inline explanation when it cannot be pressed (no controller connected, no bindings configured, or helper not yet ready).
 
 ### Fixed
+- Silent key drops during rapid Stop/Start cycles — `KeySimulator` no longer closes the FIFO write fd on `stop()`, eliminating the blocking `O_WRONLY` open that could silently discard key events during the launchd restart window.
+- AX permission revocation now detected immediately — the monitor loop no longer sleeps before its first check, so Accessibility being removed is caught at the next tick rather than after a 3-second delay.
+- Retain cycle in `checkAccessibility()` — `Task.detached` now captures `[weak self]`, preventing `ControllerManager` from being kept alive indefinitely on rapid app activation.
+- IOKit buffer race with two simultaneous DualSense controllers — each device now gets its own per-device buffer allocated in `attach()` and freed in `stop()`.
+- Stale profile state in `ControllerManager` — replaced the cached `activeGroup: ProfileGroup?` snapshot with `activeGroupName` + `activeBindings` sourced live from `ProfileStore`, eliminating a divergence that could make the wrong bindings fire after a profile switch.
 - "Publishing changes from within view updates" console warnings on launch — `@Published` mutations in `ControllerManager.init()` are now deferred into a `Task { @MainActor }`.
-- Spurious `+` toolbar button appearing in the top-right of the window with no action — removed `ToolbarItem(placement: .primaryAction)` from the sidebar; controls are now inline footer buttons.
+- Spurious `>` chevron artifact in sidebar toggle — replaced the system `NavigationSplitView` toggle button with a custom button; the built-in button left a persistent `>` toolbar artifact with no action.
+- Transient navigation chevron visible during sidebar open/close animation — the custom toggle button is now hidden during the transition.
+
+### Changed
+- Liquid glass styling applied to the firing indicator status row.
+- Glass effect polish on the permissions banner and new-profile sheet.
+- Test suite expanded from 74 tests (15 suites) to 98 tests (21 suites).
 
 ---
 
