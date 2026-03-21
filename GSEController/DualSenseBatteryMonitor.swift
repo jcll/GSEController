@@ -19,7 +19,8 @@ import os
 /// Byte offset within the IOHIDDevice report buffer (report ID stripped by macOS):
 ///   USB  (report ID 0x01): data[53]   — struct starts at data[0]
 ///   BT   (report ID 0x31): data[54]   — 1 BT header byte precedes the common struct
-final class DualSenseBatteryMonitor: @unchecked Sendable {
+@MainActor
+final class DualSenseBatteryMonitor {
     private static let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "com.gsecontroller",
         category: "DualSenseBattery"
@@ -42,14 +43,15 @@ final class DualSenseBatteryMonitor: @unchecked Sendable {
     // multiple DualSense controllers don't race on a shared pointer.
     // Allocated in attach(_:), freed in stop().
     private var callbackBuffers: [UnsafeMutablePointer<UInt8>] = []
-    // Separate buffer used only for synchronous IOHIDDeviceGetReport calls in
-    // pollDeviceProperty — always called on the main thread, no race possible.
-    private let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: 256)
+    // Tracks attached devices by CF object identity to prevent double-registration.
+    private var knownDevices: [IOHIDDevice] = []
+    // Cached reference for the no-arg pollDeviceProperty() overload.
+    private var lastAttachedDevice: IOHIDDevice?
     private var lastParsed = Date.distantPast
 
     deinit {
-        stop()
-        buf.deallocate()
+        // ControllerManager is @MainActor and owns this object, so deinit runs on main.
+        MainActor.assumeIsolated { stop() }
     }
 
     func start() {
@@ -74,7 +76,10 @@ final class DualSenseBatteryMonitor: @unchecked Sendable {
         IOHIDManagerRegisterDeviceMatchingCallback(m, { ctx, _, _, device in
             guard let ctx else { return }
             let mon = Unmanaged<DualSenseBatteryMonitor>.fromOpaque(ctx).takeUnretainedValue()
-            if mon.isDualSense(device) { mon.attach(device) }
+            // Callback fires on the main run loop — safe to assume main actor isolation.
+            MainActor.assumeIsolated {
+                if mon.isDualSense(device) { mon.attach(device) }
+            }
         }, Unmanaged.passUnretained(self).toOpaque())
     }
 
@@ -83,8 +88,20 @@ final class DualSenseBatteryMonitor: @unchecked Sendable {
         IOHIDManagerUnscheduleFromRunLoop(m, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
         IOHIDManagerClose(m, IOOptionBits(kIOHIDOptionsTypeNone))
         manager = nil
+        // Deregister per-device input callbacks before freeing buffers.
+        // IOHIDManagerUnscheduleFromRunLoop prevents the manager-level matching
+        // callback from firing, but per-device callbacks registered via
+        // IOHIDDeviceRegisterInputReportCallback are independent of the manager
+        // schedule and must be explicitly nil'd so no queued callback fires with
+        // a dangling context pointer or freed buffer.
+        var dummyBuf: UInt8 = 0
+        for device in knownDevices {
+            IOHIDDeviceRegisterInputReportCallback(device, &dummyBuf, 1, nil, nil)
+        }
         for b in callbackBuffers { b.deallocate() }
         callbackBuffers.removeAll()
+        knownDevices.removeAll()
+        lastAttachedDevice = nil
     }
 
     private func isDualSense(_ device: IOHIDDevice) -> Bool {
@@ -93,15 +110,36 @@ final class DualSenseBatteryMonitor: @unchecked Sendable {
         return Self.productIDs.contains(pid)
     }
 
+    // MARK: - Battery byte parsing
+
+    /// Parses the DualSense status byte: lower nibble = level (1–10), upper nibble = charging state.
+    /// Returns nil when level == 0 (controller reports no data) or level > 10 (malformed).
+    nonisolated static func parseBatteryByte(_ byte: UInt8) -> (level: Float, charging: Bool)? {
+        let level = Int(byte & 0x0F)
+        let chargingNibble = Int((byte >> 4) & 0x0F)
+        guard level > 0, level <= 10 else { return nil }
+        return (Float(min(level * 10 + 5, 100)) / 100.0, chargingNibble == 1 || chargingNibble == 2)
+    }
+
     private func attach(_ device: IOHIDDevice) {
+        // Guard against double-registration when the matching callback fires
+        // for devices that were already picked up by the CopyDevices loop.
+        guard !knownDevices.contains(where: { CFEqual($0, device) }) else { return }
+        knownDevices.append(device)
+        lastAttachedDevice = device
+
         let devBuf = UnsafeMutablePointer<UInt8>.allocate(capacity: 256)
         callbackBuffers.append(devBuf)
         IOHIDDeviceRegisterInputReportCallback(
             device, devBuf, 256,
             { ctx, _, _, _, reportID, data, length in
                 guard let ctx else { return }
-                Unmanaged<DualSenseBatteryMonitor>.fromOpaque(ctx).takeUnretainedValue()
-                    .handle(reportID: reportID, data: data, length: length)
+                let mon = Unmanaged<DualSenseBatteryMonitor>.fromOpaque(ctx).takeUnretainedValue()
+                // Callback fires on the main run loop — safe to assume main actor isolation.
+                // assumeIsolated is synchronous so the data pointer remains valid throughout.
+                MainActor.assumeIsolated {
+                    mon.handle(reportID: reportID, data: data, length: length)
+                }
             },
             Unmanaged.passUnretained(self).toOpaque()
         )
@@ -119,57 +157,53 @@ final class DualSenseBatteryMonitor: @unchecked Sendable {
     /// input report callbacks only receive the 10-byte short report (0x01) with no
     /// battery data. IOHIDDeviceGetReport pulls the full 78-byte 0x31 report directly.
     func pollDeviceProperty(_ device: IOHIDDevice? = nil) {
-        guard let dev = device ?? currentDevice else { return }
+        guard let dev = device ?? lastAttachedDevice else { return }
 
         // Try the standard Bluetooth HID driver battery property (integer 0–100).
+        // Don't return here — the report-based paths below include charging state.
+        // If they fail, fall through to the final propertyPct fallback.
+        var propertyPct: Float? = nil
         if let raw = IOHIDDeviceGetProperty(dev, "BatteryLevel" as CFString) as? NSNumber {
             let pct = raw.floatValue / 100.0
-            Self.logger.debug("DualSense battery (property): \(raw.intValue)%")
             if pct > 0 {
-                DispatchQueue.main.async { self.onUpdate?(pct, false) }
-                return
+                Self.logger.debug("DualSense battery (property): \(raw.intValue)%")
+                propertyPct = pct
             }
         }
+
+        // Local buffer — avoids any reentrancy hazard if IOHIDDeviceGetReport
+        // pumps the main run loop before returning.
+        var buf = [UInt8](repeating: 0, count: 256)
 
         // The DualSense pushes a 10-byte short BT report (0x01) by default — no battery.
         // Synchronously request the full 78-byte BT report (0x31) which does contain it.
         var reportLen: CFIndex = 256
-        if IOHIDDeviceGetReport(dev, kIOHIDReportTypeInput, CFIndex(Self.btReportID), buf, &reportLen) == kIOReturnSuccess,
-           reportLen > Self.btStatusOffset {
-            let byte = buf[Self.btStatusOffset]
-            let level = Int(byte & 0x0F)
-            let chargingNibble = Int((byte >> 4) & 0x0F)
-            if level > 0, level <= 10 {
-                let pct = Float(min(level * 10 + 5, 100)) / 100.0
-                let charging = chargingNibble == 1 || chargingNibble == 2
-                Self.logger.info("DualSense battery (GetReport 0x31): \(Int(pct * 100))% charging=\(charging)")
-                DispatchQueue.main.async { self.onUpdate?(pct, charging) }
-                return
-            }
+        let btResult = buf.withUnsafeMutableBufferPointer { ptr in
+            IOHIDDeviceGetReport(dev, kIOHIDReportTypeInput, CFIndex(Self.btReportID), ptr.baseAddress!, &reportLen)
+        }
+        if btResult == kIOReturnSuccess, reportLen > Self.btStatusOffset,
+           let (pct, charging) = Self.parseBatteryByte(buf[Self.btStatusOffset]) {
+            Self.logger.info("DualSense battery (GetReport 0x31): \(Int(pct * 100))% charging=\(charging)")
+            onUpdate?(pct, charging)
+            return
         }
 
         // Fallback: USB report 0x01 (covers wired connection).
         reportLen = 256
-        if IOHIDDeviceGetReport(dev, kIOHIDReportTypeInput, CFIndex(Self.usbReportID), buf, &reportLen) == kIOReturnSuccess,
-           reportLen > Self.usbStatusOffset {
-            let byte = buf[Self.usbStatusOffset]
-            let level = Int(byte & 0x0F)
-            let chargingNibble = Int((byte >> 4) & 0x0F)
-            if level > 0, level <= 10 {
-                let pct = Float(min(level * 10 + 5, 100)) / 100.0
-                let charging = chargingNibble == 1 || chargingNibble == 2
-                Self.logger.info("DualSense battery (GetReport 0x01): \(Int(pct * 100))% charging=\(charging)")
-                DispatchQueue.main.async { self.onUpdate?(pct, charging) }
-                return
-            }
+        let usbResult = buf.withUnsafeMutableBufferPointer { ptr in
+            IOHIDDeviceGetReport(dev, kIOHIDReportTypeInput, CFIndex(Self.usbReportID), ptr.baseAddress!, &reportLen)
         }
-    }
+        if usbResult == kIOReturnSuccess, reportLen > Self.usbStatusOffset,
+           let (pct, charging) = Self.parseBatteryByte(buf[Self.usbStatusOffset]) {
+            Self.logger.info("DualSense battery (GetReport 0x01): \(Int(pct * 100))% charging=\(charging)")
+            onUpdate?(pct, charging)
+            return
+        }
 
-    private var currentDevice: IOHIDDevice? {
-        guard let m = manager,
-              let devices = IOHIDManagerCopyDevices(m) as? Set<IOHIDDevice>
-        else { return nil }
-        return devices.first(where: isDualSense)
+        // Both report paths failed — fall back to property level with charging state unknown.
+        if let pct = propertyPct {
+            onUpdate?(pct, false)
+        }
     }
 
     private func handle(reportID: UInt32, data: UnsafeMutablePointer<UInt8>, length: CFIndex) {
@@ -186,17 +220,10 @@ final class DualSenseBatteryMonitor: @unchecked Sendable {
         }
         guard length > offset else { return }
 
-        let byte = data[offset]
-        let level = Int(byte & 0x0F)
-        let chargingNibble = Int((byte >> 4) & 0x0F)
-        guard level > 0, level <= 10 else { return }
-
-        let pct    = Float(min(level * 10 + 5, 100)) / 100.0
-        let charging = chargingNibble == 1 || chargingNibble == 2
+        guard let (pct, charging) = Self.parseBatteryByte(data[offset]) else { return }
         Self.logger.info("DualSense battery (report): \(Int(pct * 100))% charging=\(charging)")
 
-        // Callbacks fire on the main run loop; defer one iteration to stay
-        // outside any in-progress SwiftUI render pass.
-        DispatchQueue.main.async { self.onUpdate?(pct, charging) }
+        // Defer one iteration to stay outside any in-progress SwiftUI render pass.
+        DispatchQueue.main.async { [weak self] in self?.onUpdate?(pct, charging) }
     }
 }

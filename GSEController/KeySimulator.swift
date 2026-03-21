@@ -8,6 +8,11 @@ enum KeySimulator {
     private static let bundleID = Bundle.main.bundleIdentifier ?? "com.example.gsecontroller"
     private static let logger = Logger(subsystem: bundleID, category: "KeySimulator")
 
+    // Called on a background queue when a FIFO write fails and reconnect begins.
+    nonisolated(unsafe) static var onFIFOFailure: (() -> Void)?
+    // Called on a background queue when the FIFO reconnects successfully.
+    nonisolated(unsafe) static var onFIFORecovered: (() -> Void)?
+
     // All access to the FIFO write fd is serialized through this lock.
     private static let _fd = OSAllocatedUnfairLock<Int32>(initialState: -1)
     private static let _setupStarted = OSAllocatedUnfairLock<Bool>(initialState: false)
@@ -50,7 +55,12 @@ enum KeySimulator {
         #include <stdlib.h>
         static const char *get_fifo_path(void) {
             const char *env = getenv("FIFO_PATH");
-            return env ? env : "/tmp/com.jcll.gsecontroller.keys";
+            if (!env) {
+                const char msg[] = "FIFO_PATH not set\\n";
+                write(2, msg, sizeof(msg) - 1);
+                exit(1);
+            }
+            return env;
         }
         int main(int argc, char *argv[]) {
             if (argc > 1 && strcmp(argv[1], "--check-ax") == 0)
@@ -80,7 +90,7 @@ enum KeySimulator {
 
     // MARK: - Lifecycle
 
-    static func ensureHelper() {
+    static func ensureHelper(onComplete: (@MainActor (Bool) -> Void)? = nil) {
         let shouldSetup = _setupStarted.withLock { started -> Bool in
             if started { return false }
             started = true
@@ -92,6 +102,7 @@ enum KeySimulator {
             guard FileManager.default.fileExists(atPath: helperURL.path) else {
                 logger.error("ensureHelper: binary missing after compile attempt, aborting")
                 _setupStarted.withLock { $0 = false }
+                if let onComplete { Task { @MainActor in onComplete(false) } }
                 return
             }
             ensureFIFO()
@@ -99,6 +110,7 @@ enum KeySimulator {
                 ensureLaunchdAgent()
             }
             openFIFO()
+            if let onComplete { Task { @MainActor in onComplete(true) } }
         }
     }
 
@@ -147,6 +159,7 @@ enum KeySimulator {
                 logger.warning("FIFO write failed (errno \(errno)), reopening")
                 Darwin.close(fd)
                 fd = -1
+                onFIFOFailure?()
                 DispatchQueue.global(qos: .userInitiated).async { openFIFO() }
             }
         }
@@ -265,7 +278,12 @@ enum KeySimulator {
         p.arguments = ["print", "gui/\(getuid())/\(agentLabel)"]
         p.standardOutput = FileHandle.nullDevice
         p.standardError = FileHandle.nullDevice
-        try? p.run()
+        do {
+            try p.run()
+        } catch {
+            logger.error("launchctl spawn failed: \(error.localizedDescription, privacy: .public)")
+            return false
+        }
         p.waitUntilExit()
         return p.terminationStatus == 0
     }
@@ -335,12 +353,19 @@ enum KeySimulator {
         }
     }
 
-    private static func openFIFO() {
-        // O_WRONLY blocks until the helper opens its read end — which happens
-        // shortly after launchd starts the process above.
-        let fd = Darwin.open(fifoPath, O_WRONLY)
+    private static func openFIFO(attempt: Int = 0) {
+        // O_NONBLOCK prevents the open from blocking indefinitely when the helper
+        // hasn't opened its read end yet. On ENXIO we retry up to 20 times (10s total).
+        let fd = Darwin.open(fifoPath, O_WRONLY | O_NONBLOCK)
         if fd < 0 {
-            logger.error("open FIFO failed (errno \(errno))")
+            if errno == ENXIO && attempt < 20 {
+                DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.5) {
+                    openFIFO(attempt: attempt + 1)
+                }
+            } else {
+                logger.error("open FIFO failed after \(attempt) retries (errno \(errno))")
+                _setupStarted.withLock { $0 = false }
+            }
             return
         }
         _fd.withLock { current in
@@ -350,6 +375,7 @@ enum KeySimulator {
             } else {
                 current = fd
                 logger.info("FIFO open for writing (fd=\(fd))")
+                onFIFORecovered?()
             }
         }
     }

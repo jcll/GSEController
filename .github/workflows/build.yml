@@ -8,9 +8,20 @@ on:
 
 jobs:
   build:
+    # NOTE: macOS 26 runner not yet available on GitHub-hosted Actions.
+    # This build runs against the macOS 15 SDK (Xcode 16) and will fail or
+    # produce inaccurate results because the project requires MACOSX_DEPLOYMENT_TARGET=26.0.
+    # Update to macos-26 (or equivalent) once it is available.
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+
+      - name: Create LocalConfig.xcconfig
+        run: |
+          cat > LocalConfig.xcconfig << 'EOF'
+          BUNDLE_ID_PREFIX = com.example
+          PRODUCT_BUNDLE_IDENTIFIER = $(BUNDLE_ID_PREFIX).GSEController
+          EOF
 
       - name: Build (Debug)
         run: |
@@ -21,5 +32,4 @@ jobs:
             build \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            2>&1 | grep -E "error:|warning:|BUILD SUCCEEDED|BUILD FAILED"
+            CODE_SIGNING_ALLOWED=NO
