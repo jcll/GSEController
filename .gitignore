@@ -5,8 +5,10 @@ DerivedData/
 .build/
 *.o
 *.d
-.claude/settings.local.json
+.claude/
 .worktrees/
+.omc/
+.bg-shell/
 LocalConfig.xcconfig
 
 # ── GSD baseline (auto-generated) ──
