@@ -4,6 +4,11 @@ cd "$(dirname "$0")"
 
 ICON_DIR="GSEController/Assets.xcassets/AppIcon.appiconset"
 
+if [ ! -f make_icon.swift ]; then
+    echo "❌  make_icon.swift not found — cannot generate icon"
+    exit 1
+fi
+
 echo "🎨  Generating icon..."
 swift make_icon.swift "$ICON_DIR"
 
@@ -36,12 +41,19 @@ if [ -z "$BUILD_DIR" ]; then
     exit 1
 fi
 
+BUILD_LOG=$(mktemp /tmp/gse_build.XXXXXX)
+trap 'rm -f "$BUILD_LOG"' EXIT
+
 echo "🔨  Building release..."
-if ! xcodebuild -project GSEController.xcodeproj \
+xcodebuild -project GSEController.xcodeproj \
            -scheme GSEController \
            -configuration Release \
            build \
-           2>&1 | grep -Ev "^$|^note:|appintentsmetadata|^    " | grep -E "error:|BUILD|warning:"; then
+           2>&1 | tee "$BUILD_LOG" | \
+           grep -Ev "^$|^note:|appintentsmetadata|^    " | \
+           grep -E "error:|BUILD|warning:" || true
+
+if grep -q "BUILD FAILED" "$BUILD_LOG"; then
     echo "❌  Build failed"
     exit 1
 fi

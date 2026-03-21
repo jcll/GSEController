@@ -18,13 +18,19 @@ class ControllerManager: ObservableObject {
     @Published var hasHelperAccessibility = false
     @Published var batteryLevel: Float? = nil
     @Published var batteryCharging: Bool = false
+    @Published var helperReady: Bool = true
+    @Published var fifoHealthy: Bool = true
+    @Published var wowIsActive: Bool = false {
+        didSet { updateStatusIfRunning() }
+    }
     @Published var requireWoWFocus: Bool {
         didSet {
-            UserDefaults.standard.set(requireWoWFocus, forKey: "requireWoWFocus")
+            defaults.set(requireWoWFocus, forKey: "requireWoWFocus")
             fireEngine.requireWoWFocus = requireWoWFocus
         }
     }
 
+    private let defaults: UserDefaults
     private let fireEngine = FireEngine()
     private var controller: GCController?
     private var activeGroupName: String?
@@ -35,13 +41,22 @@ class ControllerManager: ObservableObject {
     private let dualSenseBattery = DualSenseBatteryMonitor()
     private var lowBatteryNotified = false
 
-    init() {
-        self.requireWoWFocus = UserDefaults.standard.object(forKey: "requireWoWFocus") as? Bool ?? true
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        self.requireWoWFocus = defaults.object(forKey: "requireWoWFocus") as? Bool ?? true
         GCController.shouldMonitorBackgroundEvents = true
         setupNotifications()
         setupAppTracking()
         setupPermissionRecheck()
-        KeySimulator.ensureHelper()
+        KeySimulator.ensureHelper { [weak self] ready in
+            self?.helperReady = ready
+        }
+        KeySimulator.onFIFOFailure = { [weak self] in
+            Task { @MainActor [weak self] in self?.fifoHealthy = false }
+        }
+        KeySimulator.onFIFORecovered = { [weak self] in
+            Task { @MainActor [weak self] in self?.fifoHealthy = true }
+        }
 
         // Capture before the Task so we don't race with a connect notification.
         let existing = GCController.controllers().first
@@ -51,12 +66,14 @@ class ControllerManager: ObservableObject {
             self?.hasAccessibility = false
             self?.stop()
         }
-        fireEngine.$isFiring.assign(to: &$isFiring)
-
         firingObserver = fireEngine.$isFiring.sink { [weak self] firing in
-            guard let self, self.isRunning else { return }
+            guard let self else { return }
+            self.isFiring = firing
+            guard self.isRunning else { return }
             if firing {
                 self.statusMessage = "FIRING"
+            } else if self.requireWoWFocus && !self.wowIsActive {
+                self.statusMessage = "Active — waiting for WoW"
             } else if let name = self.activeGroupName {
                 self.statusMessage = "Active — \(name)"
             }
@@ -102,12 +119,15 @@ class ControllerManager: ObservableObject {
 
     @objc private func controllerDisconnected(_ notification: Notification) {
         Self.logger.info("Controller disconnected")
+        // stop() must precede controller = nil so clearButtonHandlers() can access the
+        // gamepad and nil out pressedChangedHandler closures — otherwise they leak as
+        // zombie handlers that silently capture the old bindings indefinitely.
+        stop()
         controller = nil
         controllerName = nil
         isConnected = false
         lowBatteryNotified = false
         stopBatteryMonitoring()
-        stop()
         statusMessage = "Controller disconnected"
     }
 
@@ -150,24 +170,42 @@ class ControllerManager: ObservableObject {
 
     @objc private func activeAppChanged(_ notification: Notification) {
         guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
-        fireEngine.wowIsActive = Self.isWoW(app)
+        let wow = Self.isWoW(app)
+        fireEngine.wowIsActive = wow
+        wowIsActive = wow
     }
 
     private func refreshWoWFocus() {
         if let app = NSWorkspace.shared.frontmostApplication {
-            fireEngine.wowIsActive = Self.isWoW(app)
+            let wow = Self.isWoW(app)
+            fireEngine.wowIsActive = wow
+            wowIsActive = wow
         }
     }
 
-    private static let wowBundleIDs: Set<String> = [
+    private func updateStatusIfRunning() {
+        guard isRunning, !isFiring else { return }
+        if requireWoWFocus && !wowIsActive {
+            statusMessage = "Active — waiting for WoW"
+        } else if let name = activeGroupName {
+            statusMessage = "Active — \(name)"
+        }
+    }
+
+    private nonisolated(unsafe) static let wowBundleIDs: Set<String> = [
         "com.blizzard.worldofwarcraft",
         "com.blizzard.worldofwarcraftclassic",
         "com.blizzard.wow",
     ]
 
-    private static func isWoW(_ app: NSRunningApplication) -> Bool {
-        if let bundleID = app.bundleIdentifier?.lowercased(), wowBundleIDs.contains(bundleID) { return true }
-        if let name = app.localizedName?.lowercased(), name.contains("warcraft") { return true }
+    // internal so tests can exercise directly; NSRunningApplication overload delegates here
+    nonisolated static func isWoW(_ app: NSRunningApplication) -> Bool {
+        isWoW(bundleID: app.bundleIdentifier, localizedName: app.localizedName)
+    }
+
+    nonisolated static func isWoW(bundleID: String?, localizedName: String?) -> Bool {
+        if let id = bundleID?.lowercased(), wowBundleIDs.contains(id) { return true }
+        if let name = localizedName?.lowercased(), name.contains("warcraft") { return true }
         return false
     }
 
@@ -191,12 +229,17 @@ class ControllerManager: ObservableObject {
         }
     }
 
+    /// Pure function so it can be unit-tested without a live ControllerManager.
+    nonisolated static func shouldNotifyLowBattery(level: Float, charging: Bool, alreadyNotified: Bool) -> Bool {
+        !charging && level <= 0.20 && !alreadyNotified
+    }
+
     private func checkLowBattery(level: Float, charging: Bool) {
-        if charging || level > 0.25 {
+        if charging || level > 0.20 {
             lowBatteryNotified = false
             return
         }
-        guard level <= 0.20, !lowBatteryNotified else { return }
+        guard Self.shouldNotifyLowBattery(level: level, charging: charging, alreadyNotified: lowBatteryNotified) else { return }
         lowBatteryNotified = true
         let content = UNMutableNotificationContent()
         content.title = "Controller Battery Low"
@@ -229,9 +272,12 @@ class ControllerManager: ObservableObject {
     }
 
     deinit {
-        batteryTimer?.invalidate()
-        NotificationCenter.default.removeObserver(self)
-        NSWorkspace.shared.notificationCenter.removeObserver(self)
+        let timer = batteryTimer
+        if Thread.isMainThread {
+            timer?.invalidate()
+        } else {
+            DispatchQueue.main.async { timer?.invalidate() }
+        }
     }
 
     // MARK: - Start / Stop
@@ -250,17 +296,24 @@ class ControllerManager: ObservableObject {
         activeGroupName = group.name
         activeBindings = group.bindings
         isRunning = true
-        KeySimulator.ensureHelper()
+        KeySimulator.ensureHelper { [weak self] ready in
+            self?.helperReady = ready
+        }
         fireEngine.requireWoWFocus = requireWoWFocus
         refreshWoWFocus()
         Self.logger.info("Started group \"\(group.name, privacy: .public)\" with \(group.bindings.count) binding(s)")
-        statusMessage = "Active — \(group.name)"
+        statusMessage = requireWoWFocus && !wowIsActive ? "Active — waiting for WoW" : "Active — \(group.name)"
         attachHandlers(for: group.bindings)
     }
 
     func stop() {
         fireEngine.stopAll()
         clearButtonHandlers()
+        // Unconditionally release all modifiers — guards against modifier keys
+        // getting stuck in WoW if stop() is called while a button is held.
+        for modifier in KeyModifier.allCases where modifier != .none {
+            KeySimulator.modifierUp(modifier)
+        }
         isRunning = false
         activeGroupName = nil
         activeBindings = nil
@@ -286,6 +339,7 @@ class ControllerManager: ObservableObject {
         case .dpadDown:      gamepad.dpad.down
         case .dpadLeft:      gamepad.dpad.left
         case .dpadRight:     gamepad.dpad.right
+        case .dpadUp:        gamepad.dpad.up
         }
     }
 
@@ -293,7 +347,8 @@ class ControllerManager: ObservableObject {
         guard let gamepad = controller?.extendedGamepad else { return }
         clearButtonHandlers()
 
-        for binding in bindings {
+        var seen = Set<ControllerButton>()
+        for binding in bindings where seen.insert(binding.button).inserted {
             buttonInput(for: binding.button, on: gamepad)?.pressedChangedHandler = { [weak self] _, _, pressed in
                 Task { @MainActor [weak self] in
                     self?.handleButton(binding: binding, pressed: pressed)
@@ -304,7 +359,8 @@ class ControllerManager: ObservableObject {
 
     private func clearButtonHandlers() {
         guard let gamepad = controller?.extendedGamepad else { return }
-        for button in ControllerButton.allCases {
+        let buttons = activeBindings?.map(\.button) ?? ControllerButton.allCases
+        for button in buttons {
             buttonInput(for: button, on: gamepad)?.pressedChangedHandler = nil
         }
     }

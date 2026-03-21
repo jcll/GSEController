@@ -9,7 +9,11 @@ class FireEngine: ObservableObject {
 
     @Published var isFiring = false
 
-    var requireWoWFocus: Bool = true
+    private let _requireWoWFocus = OSAllocatedUnfairLock<Bool>(initialState: true)
+    var requireWoWFocus: Bool {
+        get { _requireWoWFocus.withLock { $0 } }
+        set { _requireWoWFocus.withLock { $0 = newValue } }
+    }
     private let _wowIsActive = OSAllocatedUnfairLock<Bool>(initialState: false)
     var wowIsActive: Bool {
         get { _wowIsActive.withLock { $0 } }
@@ -66,7 +70,7 @@ class FireEngine: ObservableObject {
 
         let keyCode = binding.keyCode
         let interval = FireEngine.clampedInterval(rate: binding.rate)
-        let focusRequired = requireWoWFocus
+        let focusLock = _requireWoWFocus
         let wowLock = _wowIsActive
         let axLock = _axEnabled
 
@@ -77,7 +81,7 @@ class FireEngine: ObservableObject {
         // @MainActor (inheriting startFiring's isolation) and crash on fireQueue.
         let timer = FireEngine.makeTimer(
             queue: fireQueue, interval: interval,
-            keyCode: keyCode, focusRequired: focusRequired,
+            keyCode: keyCode, focusLock: focusLock,
             wowLock: wowLock, axLock: axLock
         )
 
@@ -100,7 +104,7 @@ class FireEngine: ObservableObject {
         queue: DispatchQueue,
         interval: Double,
         keyCode: UInt16,
-        focusRequired: Bool,
+        focusLock: OSAllocatedUnfairLock<Bool>,
         wowLock: OSAllocatedUnfairLock<Bool>,
         axLock: OSAllocatedUnfairLock<Bool>
     ) -> DispatchSourceTimer {
@@ -108,7 +112,7 @@ class FireEngine: ObservableObject {
         timer.schedule(deadline: .now(), repeating: interval, leeway: .milliseconds(4))
         timer.setEventHandler {
             if !axLock.withLock({ $0 }) { return }
-            if focusRequired && !wowLock.withLock({ $0 }) { return }
+            if focusLock.withLock({ $0 }) && !wowLock.withLock({ $0 }) { return }
             KeySimulator.pressKey(keyCode)
         }
         return timer

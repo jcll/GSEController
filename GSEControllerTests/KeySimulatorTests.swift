@@ -41,3 +41,26 @@ import Testing
         #expect(KeySimulator.encodeCommand(type: 1, keyCode: 65535).count == 4)
     }
 }
+
+// MARK: - Modifier Suppression (TEST-14)
+
+@Suite struct ModifierSuppressionTests {
+    // ensureHelper() is never called in the test environment, so _fd == -1.
+    // modifierDown/modifierUp must be no-ops (no crash, no hang, no write).
+    @Test func modifierDownIsNoOpBeforeHelperStarts() {
+        KeySimulator.modifierDown(.alt)
+        KeySimulator.modifierDown(.shift)
+        KeySimulator.modifierDown(.ctrl)
+    }
+
+    @Test func modifierUpIsNoOpBeforeHelperStarts() {
+        KeySimulator.modifierUp(.alt)
+        KeySimulator.modifierUp(.shift)
+        KeySimulator.modifierUp(.ctrl)
+    }
+
+    @Test func pressKeyIsNoOpBeforeHelperStarts() {
+        KeySimulator.pressKey(0x28) // K
+        KeySimulator.pressKey(0x00) // A
+    }
+}

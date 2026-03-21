@@ -1,20 +1,23 @@
 import Foundation
 import os
 
-enum ControllerButton: String, CaseIterable, Codable, Identifiable {
-    case rightShoulder = "R1"
-    case leftShoulder = "L1"
-    case rightTrigger = "R2"
-    case leftTrigger = "L2"
-    case buttonSouth = "A / Cross"
-    case buttonEast = "B / Circle"
-    case buttonWest = "X / Square"
-    case buttonNorth = "Y / Triangle"
-    case l3 = "L3"
-    case r3 = "R3"
-    case dpadDown = "dpadDown"
-    case dpadLeft = "dpadLeft"
-    case dpadRight = "dpadRight"
+// rawValues are stable internal keys (case name). Legacy display-string values
+// (e.g. "R1", "A / Cross") are handled by the custom init(from:) below.
+enum ControllerButton: String, CaseIterable, Identifiable {
+    case rightShoulder
+    case leftShoulder
+    case rightTrigger
+    case leftTrigger
+    case buttonSouth
+    case buttonEast
+    case buttonWest
+    case buttonNorth
+    case l3
+    case r3
+    case dpadDown
+    case dpadLeft
+    case dpadRight
+    case dpadUp
 
     var id: String { rawValue }
 
@@ -33,6 +36,7 @@ enum ControllerButton: String, CaseIterable, Codable, Identifiable {
         case .dpadDown:      return "D-Pad ↓"
         case .dpadLeft:      return "D-Pad ←"
         case .dpadRight:     return "D-Pad →"
+        case .dpadUp:        return "D-Pad ↑"
         }
     }
 
@@ -51,11 +55,48 @@ enum ControllerButton: String, CaseIterable, Codable, Identifiable {
         case .dpadDown:      return "D↓"
         case .dpadLeft:      return "D←"
         case .dpadRight:     return "D→"
+        case .dpadUp:        return "D↑"
         }
     }
 
     var isDpad: Bool {
-        self == .dpadDown || self == .dpadLeft || self == .dpadRight
+        switch self {
+        case .dpadDown, .dpadLeft, .dpadRight, .dpadUp: return true
+        default: return false
+        }
+    }
+}
+
+extension ControllerButton: Codable {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        if let value = ControllerButton(rawValue: raw) {
+            self = value
+            return
+        }
+        // Migrate legacy display-string rawValues written by pre-ARCH-04 builds.
+        switch raw {
+        case "R1":           self = .rightShoulder
+        case "L1":           self = .leftShoulder
+        case "R2":           self = .rightTrigger
+        case "L2":           self = .leftTrigger
+        case "A / Cross":    self = .buttonSouth
+        case "B / Circle":   self = .buttonEast
+        case "X / Square":   self = .buttonWest
+        case "Y / Triangle": self = .buttonNorth
+        case "L3":           self = .l3
+        case "R3":           self = .r3
+        case "D-Pad ↓":     self = .dpadDown
+        case "D-Pad ←":     self = .dpadLeft
+        case "D-Pad →":     self = .dpadRight
+        case "D-Pad ↑":     self = .dpadUp
+        default:
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Unknown ControllerButton raw value: \(raw)"
+            )
+        }
     }
 }
 
@@ -168,8 +209,10 @@ struct MacroKey: Identifiable, Hashable, Codable {
         .init(name: "`", keyCode: 0x32),
     ]
 
+    static let byName: [String: MacroKey] = Dictionary(uniqueKeysWithValues: allKeys.map { ($0.name, $0) })
+
     static func find(_ name: String) -> MacroKey? {
-        allKeys.first { $0.name == name }
+        byName[name]
     }
 }
 
@@ -178,10 +221,10 @@ struct MacroKey: Identifiable, Hashable, Codable {
 @MainActor
 class ProfileStore: ObservableObject {
     @Published var groups: [ProfileGroup] {
-        didSet { save() }
+        didSet { scheduleSave() }
     }
     @Published var activeGroupId: UUID? {
-        didSet { save() }
+        didSet { scheduleSave() }
     }
 
     var activeGroup: ProfileGroup? {
@@ -190,6 +233,7 @@ class ProfileStore: ObservableObject {
 
     private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.example.gsecontroller", category: "ProfileStore")
     private let defaults: UserDefaults
+    private var saveTask: Task<Void, Never>?
 
     convenience init() {
         self.init(defaults: .standard)
@@ -219,16 +263,6 @@ class ProfileStore: ObservableObject {
             defaults.removeObject(forKey: "profiles")
             defaults.removeObject(forKey: "activeProfileId")
             save()
-        } else if let data = defaults.data(forKey: "groups"),
-                  let decoded = try? JSONDecoder().decode([ProfileGroup].self, from: data) {
-            groups = decoded
-            if let idStr = defaults.string(forKey: "activeGroupId"),
-               let id = UUID(uuidString: idStr),
-               decoded.contains(where: { $0.id == id }) {
-                activeGroupId = id
-            } else {
-                activeGroupId = decoded.first?.id
-            }
         } else {
             let defaultGroup = ProfileGroup(
                 name: "Guardian Druid",
@@ -240,8 +274,42 @@ class ProfileStore: ObservableObject {
                     rate: 10
                 )]
             )
-            groups = [defaultGroup]
-            activeGroupId = defaultGroup.id
+            if let data = defaults.data(forKey: "groups") {
+                do {
+                    let decoded = try JSONDecoder().decode([ProfileGroup].self, from: data)
+                    groups = decoded
+                    if let idStr = defaults.string(forKey: "activeGroupId"),
+                       let id = UUID(uuidString: idStr),
+                       decoded.contains(where: { $0.id == id }) {
+                        activeGroupId = id
+                    } else {
+                        activeGroupId = decoded.first?.id
+                    }
+                } catch {
+                    // Back up the corrupt data before falling through to the default
+                    // profile so the user's raw JSON can be inspected or recovered.
+                    Self.logger.error("Failed to decode saved groups: \(error.localizedDescription). Backing up to 'groups_backup'.")
+                    defaults.set(data, forKey: "groups_backup")
+                    groups = [defaultGroup]
+                    activeGroupId = defaultGroup.id
+                }
+            } else {
+                groups = [defaultGroup]
+                activeGroupId = defaultGroup.id
+            }
+        }
+    }
+
+    private func scheduleSave() {
+        saveTask?.cancel()
+        saveTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(300))
+                self?.save()
+            } catch is CancellationError {
+            } catch {
+                Self.logger.error("scheduleSave failed: \(error.localizedDescription)")
+            }
         }
     }
 
@@ -265,6 +333,19 @@ class ProfileStore: ObservableObject {
         if activeGroupId == group.id {
             activeGroupId = groups.first?.id
         }
+    }
+
+    // MARK: - Export / Import
+
+    func exportData() throws -> Data {
+        try JSONEncoder().encode(groups)
+    }
+
+    func importData(_ data: Data) throws {
+        let imported = try JSONDecoder().decode([ProfileGroup].self, from: data)
+        guard !imported.isEmpty else { return }
+        groups = imported
+        activeGroupId = imported.first?.id
     }
 }
 
