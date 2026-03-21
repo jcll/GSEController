@@ -10,6 +10,8 @@ DerivedData/
 .omc/
 .bg-shell/
 LocalConfig.xcconfig
+REVIEW.md
+CLAUDE_REVIEW*.md
 
 # ── GSD baseline (auto-generated) ──
 .gsd
