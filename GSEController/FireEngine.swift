@@ -27,7 +27,7 @@ class FireEngine: ObservableObject {
     }
 
     private var activeTimers: [ControllerButton: DispatchSourceTimer] = [:]
-    var heldModifiers: Set<KeyModifier> = []
+    private var heldModifiers: Set<KeyModifier> = []
     nonisolated(unsafe) private var activity: NSObjectProtocol?
     private let fireQueue = DispatchQueue(label: "\(FireEngine.bundleID).fire", qos: .userInteractive)
 

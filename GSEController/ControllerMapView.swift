@@ -5,7 +5,7 @@ import SwiftUI
 struct ControllerMapView: View {
     let bindings: [MacroBinding]
 
-    private let faceRow: [ControllerButton] = [.buttonWest, .buttonNorth, .buttonSouth, .buttonEast, .l3, .r3]
+    private static let faceRow: [ControllerButton] = [.buttonWest, .buttonNorth, .buttonSouth, .buttonEast, .l3, .r3]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -28,9 +28,9 @@ struct ControllerMapView: View {
             }
 
             // Face/stick row — only if any are configured
-            if faceRow.contains(where: { btn in bindings.contains { $0.button == btn } }) {
+            if Self.faceRow.contains(where: { btn in bindings.contains { $0.button == btn } }) {
                 HStack(spacing: 8) {
-                    ForEach(faceRow, id: \.self) { chipView($0) }
+                    ForEach(Self.faceRow, id: \.self) { chipView($0) }
                 }
             }
 

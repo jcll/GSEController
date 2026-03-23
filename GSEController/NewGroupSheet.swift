@@ -18,7 +18,7 @@ struct NewGroupSheet: View {
         MacroBinding(button: button, keyName: "K", keyCode: 0x28, modifier: modifier, mode: mode, rate: rate, label: label)
     }
 
-    private var templates: [ProfileTemplate] {
+    private static let templates: [ProfileTemplate] = {
         [
             ProfileTemplate(
                 id: "guardian-druid",
@@ -103,7 +103,7 @@ struct NewGroupSheet: View {
                 ])
             ),
         ]
-    }
+    }()
 
     private let columns = [
         GridItem(.flexible()),
@@ -117,7 +117,7 @@ struct NewGroupSheet: View {
                     .font(.title3.weight(.semibold))
 
                 LazyVGrid(columns: columns, spacing: 12) {
-                    ForEach(templates) { template in
+                    ForEach(Self.templates) { template in
                         Button(action: {
                             store.addGroup(template.group)
                             isPresented = false
@@ -141,6 +141,7 @@ struct NewGroupSheet: View {
                             .padding(10)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10))
+                            .enhancedGlass(cornerRadius: 10)
                         }
                         .buttonStyle(.plain)
                     }
