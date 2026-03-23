@@ -78,6 +78,7 @@ struct GroupEditorCard: View {
         }
         .padding(16)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
+        .enhancedGlass(cornerRadius: 12, tint: hasChanges ? .blue : nil)
         .onChange(of: group) { _, newGroup in draft = newGroup }
     }
 

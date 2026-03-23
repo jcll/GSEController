@@ -230,6 +230,7 @@ struct ContentView: View {
         }
         .padding(16)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
+        .enhancedGlass(cornerRadius: 12, tint: controller.isConnected ? .green : nil)
     }
 
     private func batteryIndicator(level: Float, charging: Bool) -> some View {
@@ -280,22 +281,8 @@ struct ContentView: View {
             Divider()
 
             permissionRow(
-                granted: controller.hasAccessibility,
-                label: "GSEController",
-                detail: "Allows the app to receive controller input in the background.",
-                actions: {
-                    Button("Grant Access") {
-                        KeySimulator.requestAccessibility()
-                    }
-                    .buttonStyle(.glass)
-                    .controlSize(.small)
-                    .accessibilityLabel("Grant GSEController Accessibility access")
-                }
-            )
-
-            permissionRow(
                 granted: controller.hasHelperAccessibility,
-                label: "Key Helper binary",
+                label: "Step 1 — Key Helper binary",
                 detail: "Sends keystrokes to WoW. Open Accessibility settings, then drag the helper in.",
                 actions: {
                     Button("Open Settings") {
@@ -305,6 +292,23 @@ struct ContentView: View {
                     .buttonStyle(.glass)
                     .controlSize(.small)
                     .accessibilityLabel("Open Settings for Key Helper")
+                }
+            )
+
+            permissionRow(
+                granted: controller.hasAccessibility,
+                label: "Step 2 — GSEController",
+                detail: controller.hasHelperAccessibility
+                    ? "Allows the app to receive controller input in the background."
+                    : "Complete Step 1 first, then grant access here.",
+                actions: {
+                    Button("Grant Access") {
+                        KeySimulator.requestAccessibility()
+                    }
+                    .buttonStyle(.glass)
+                    .controlSize(.small)
+                    .disabled(!controller.hasHelperAccessibility)
+                    .accessibilityLabel("Grant GSEController Accessibility access")
                 }
             )
 
@@ -414,6 +418,7 @@ struct ContentView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
+        .enhancedGlass(cornerRadius: 12)
     }
 
     // MARK: - ConsolePort Info Sheet
@@ -453,7 +458,19 @@ struct ContentView: View {
     private var statusRow: some View {
         HStack(spacing: 8) {
             ZStack {
-                // Ripple ring — expands from 1x to 1.8x and fades out while firing
+                // Outer ripple ring — larger scale, longer period, phase-offset by 0.4 s
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 10, height: 10)
+                    .scaleEffect(controller.isFiring ? 2.4 : 1.0)
+                    .opacity(controller.isFiring ? 0.0 : 0.15)
+                    .animation(
+                        controller.isFiring
+                            ? .easeOut(duration: 1.2).repeatForever(autoreverses: false).delay(0.4)
+                            : .easeOut(duration: 0.3),
+                        value: controller.isFiring
+                    )
+                // Inner ripple ring — tighter scale, shorter period
                 Circle()
                     .fill(statusColor)
                     .frame(width: 10, height: 10)
@@ -482,6 +499,7 @@ struct ContentView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10))
+        .enhancedGlass(cornerRadius: 10, tint: controller.isFiring ? .red : (controller.isRunning ? .green : nil))
     }
 
     private var statusColor: Color {

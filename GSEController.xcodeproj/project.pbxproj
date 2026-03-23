@@ -19,6 +19,7 @@
 		B10000000000000000000A13 /* GroupEditorCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AC /* GroupEditorCard.swift */; };
 		B10000000000000000000A14 /* BindingRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AD /* BindingRow.swift */; };
 		B10000000000000000000A15 /* NewGroupSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AE /* NewGroupSheet.swift */; };
+		B10000000000000000000A16 /* EnhancedGlassModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AF /* EnhancedGlassModifier.swift */; };
 		T10000000000000000000001 /* ModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T20000000000000000000001 /* ModelsTests.swift */; };
 		T10000000000000000000002 /* FireEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T20000000000000000000002 /* FireEngineTests.swift */; };
 		T10000000000000000000003 /* KeySimulatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T20000000000000000000003 /* KeySimulatorTests.swift */; };
@@ -42,6 +43,7 @@
 		B100000000000000000000AC /* GroupEditorCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupEditorCard.swift; sourceTree = "<group>"; };
 		B100000000000000000000AD /* BindingRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BindingRow.swift; sourceTree = "<group>"; };
 		B100000000000000000000AE /* NewGroupSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewGroupSheet.swift; sourceTree = "<group>"; };
+		B100000000000000000000AF /* EnhancedGlassModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnhancedGlassModifier.swift; sourceTree = "<group>"; };
 		E072AD09E0B04C459D4A8E32 /* LocalConfig.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = LocalConfig.xcconfig; sourceTree = "<group>"; };
 		T20000000000000000000001 /* ModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelsTests.swift; sourceTree = "<group>"; };
 		T20000000000000000000002 /* FireEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FireEngineTests.swift; sourceTree = "<group>"; };
@@ -93,6 +95,7 @@
 				B100000000000000000000AC /* GroupEditorCard.swift */,
 				B100000000000000000000AD /* BindingRow.swift */,
 				B100000000000000000000AE /* NewGroupSheet.swift */,
+				B100000000000000000000AF /* EnhancedGlassModifier.swift */,
 				B100000000000000000000A7 /* Assets.xcassets */,
 				B100000000000000000000A5 /* Info.plist */,
 				B100000000000000000000A6 /* GSEController.entitlements */,
@@ -223,6 +226,7 @@
 				B10000000000000000000A13 /* GroupEditorCard.swift in Sources */,
 				B10000000000000000000A14 /* BindingRow.swift in Sources */,
 				B10000000000000000000A15 /* NewGroupSheet.swift in Sources */,
+				B10000000000000000000A16 /* EnhancedGlassModifier.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
