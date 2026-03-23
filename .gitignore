@@ -12,6 +12,7 @@ DerivedData/
 LocalConfig.xcconfig
 REVIEW.md
 CLAUDE_REVIEW*.md
+AGENTS.md
 
 # ── GSD baseline (auto-generated) ──
 .gsd

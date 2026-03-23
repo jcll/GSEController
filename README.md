@@ -31,14 +31,14 @@ D-pad buttons add a second layer: hold one and it sends a modifier key (Alt/Shif
 ## Requirements
 
 - macOS 26 Tahoe beta (does not run on macOS 15 Sequoia or earlier)
-- Xcode 16+ with command-line tools (required to build)
+- Xcode 26 beta with command-line tools (required to build)
 - A PS5 DualSense or Xbox controller connected via USB or Bluetooth
 - Accessibility permission (to send key events to WoW)
 - World of Warcraft (Retail or Classic) with GSE installed
 
 ## Installation
 
-> **No pre-built binary is available.** The app is unsandboxed and can't be signed for general distribution, so you must build from source. Xcode 16 and macOS 26 beta are required.
+> **No pre-built binary is available.** The app is unsandboxed and can't be signed for general distribution, so you must build from source. Xcode 26 beta and macOS 26 beta are required.
 
 ```bash
 git clone https://github.com/jcll/GSEController.git
@@ -69,7 +69,7 @@ On first launch, macOS will ask for Accessibility permission — this is require
 
 ### Profile templates
 
-All templates default to key **Q** — change it to match your actual GSE keybind after selecting.
+All templates default to key **K** — change it to match your actual GSE keybind after selecting.
 
 | Template | R1 | R2 | D↓ (Alt) | D← (Shift) | D→ (Ctrl) |
 |---|---|---|---|---|---|
@@ -145,7 +145,7 @@ xcodebuild -project GSEController.xcodeproj -scheme GSEController -destination '
 xcodebuild test -project GSEController.xcodeproj -scheme GSEController -destination 'platform=macOS,arch=arm64'
 ```
 
-29 unit tests covering `Models`, `FireEngine`, and `KeySimulator` pure logic. No mocking infrastructure — tests run entirely in-process via `TEST_HOST`/`BUNDLE_LOADER`.
+98 unit tests across 5 test suites covering `Models`, `ControllerManager`, `FireEngine`, `KeySimulator`, and `DualSenseBatteryMonitor`. No mocking infrastructure — tests run entirely in-process via `TEST_HOST`/`BUNDLE_LOADER`.
 
 ## License
 
