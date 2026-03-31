@@ -6,6 +6,7 @@ struct EnhancedGlassModifier: ViewModifier {
     var tintColor: Color?
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
     @State private var shimmerPhase: CGFloat = 0
 
@@ -16,6 +17,7 @@ struct EnhancedGlassModifier: ViewModifier {
 
     private var shadowRadius: CGFloat { reduceTransparency ? 4 : 8 }
     private var shadowY: CGFloat { reduceTransparency ? 2 : 4 }
+    private var shouldAnimateShimmer: Bool { !reduceTransparency && !reduceMotion && tintColor != nil }
 
     func body(content: Content) -> some View {
         content
@@ -52,17 +54,19 @@ struct EnhancedGlassModifier: ViewModifier {
                         .allowsHitTesting(false)
 
                     // Shimmer sweep — moving specular band simulating reflected light
-                    GeometryReader { geo in
-                        LinearGradient(
-                            colors: [.clear, .white.opacity(0.08), .clear],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                        .frame(width: geo.size.width * 0.40)
-                        .offset(x: shimmerPhase * (geo.size.width * 1.40) - geo.size.width * 0.40)
+                    if shouldAnimateShimmer {
+                        GeometryReader { geo in
+                            LinearGradient(
+                                colors: [.clear, .white.opacity(0.08), .clear],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                            .frame(width: geo.size.width * 0.40)
+                            .offset(x: shimmerPhase * (geo.size.width * 1.40) - geo.size.width * 0.40)
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+                        .allowsHitTesting(false)
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-                    .allowsHitTesting(false)
 
                     // Tint surface wash + colored rim accent
                     if let tint = tintColor {
@@ -77,12 +81,17 @@ struct EnhancedGlassModifier: ViewModifier {
                 }
             }
             .onAppear {
-                if !reduceTransparency {
-                    withAnimation(.linear(duration: 5).repeatForever(autoreverses: false)) {
-                        shimmerPhase = 1.0
-                    }
-                }
+                updateShimmerAnimation()
             }
+            .onChange(of: shouldAnimateShimmer) { _, _ in updateShimmerAnimation() }
+    }
+
+    private func updateShimmerAnimation() {
+        shimmerPhase = 0
+        guard shouldAnimateShimmer else { return }
+        withAnimation(.linear(duration: 5).repeatForever(autoreverses: false)) {
+            shimmerPhase = 1.0
+        }
     }
 }
 

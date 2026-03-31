@@ -20,11 +20,15 @@
 		B10000000000000000000A14 /* BindingRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AD /* BindingRow.swift */; };
 		B10000000000000000000A15 /* NewGroupSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AE /* NewGroupSheet.swift */; };
 		B10000000000000000000A16 /* EnhancedGlassModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000AF /* EnhancedGlassModifier.swift */; };
+		B10000000000000000000A17 /* ProfileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B3 /* ProfileStore.swift */; };
+		B10000000000000000000A18 /* KeyInjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B4 /* KeyInjection.swift */; };
+		B10000000000000000000A19 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000B5 /* AppModel.swift */; };
 		T10000000000000000000001 /* ModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T20000000000000000000001 /* ModelsTests.swift */; };
 		T10000000000000000000002 /* FireEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T20000000000000000000002 /* FireEngineTests.swift */; };
 		T10000000000000000000003 /* KeySimulatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T20000000000000000000003 /* KeySimulatorTests.swift */; };
 		T10000000000000000000004 /* ControllerManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T30000000000000000000004 /* ControllerManagerTests.swift */; };
 		T10000000000000000000005 /* DualSenseBatteryMonitorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T20000000000000000000005 /* DualSenseBatteryMonitorTests.swift */; };
+		U10000000000000000000001 /* GSEControllerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = U20000000000000000000001 /* GSEControllerUITests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -44,6 +48,9 @@
 		B100000000000000000000AD /* BindingRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BindingRow.swift; sourceTree = "<group>"; };
 		B100000000000000000000AE /* NewGroupSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewGroupSheet.swift; sourceTree = "<group>"; };
 		B100000000000000000000AF /* EnhancedGlassModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnhancedGlassModifier.swift; sourceTree = "<group>"; };
+		B100000000000000000000B3 /* ProfileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileStore.swift; sourceTree = "<group>"; };
+		B100000000000000000000B4 /* KeyInjection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyInjection.swift; sourceTree = "<group>"; };
+		B100000000000000000000B5 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		E072AD09E0B04C459D4A8E32 /* LocalConfig.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = LocalConfig.xcconfig; sourceTree = "<group>"; };
 		T20000000000000000000001 /* ModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelsTests.swift; sourceTree = "<group>"; };
 		T20000000000000000000002 /* FireEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FireEngineTests.swift; sourceTree = "<group>"; };
@@ -51,6 +58,8 @@
 		T30000000000000000000004 /* ControllerManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControllerManagerTests.swift; sourceTree = "<group>"; };
 		T20000000000000000000005 /* DualSenseBatteryMonitorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DualSenseBatteryMonitorTests.swift; sourceTree = "<group>"; };
 		T20000000000000000000004 /* GSEControllerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GSEControllerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		U20000000000000000000001 /* GSEControllerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GSEControllerUITests.swift; sourceTree = "<group>"; };
+		U20000000000000000000002 /* GSEControllerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GSEControllerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -68,6 +77,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		U30000000000000000000002 /* Frameworks (UI Tests) */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -76,6 +92,7 @@
 			children = (
 				B100000000000000000000B1 /* GSEController */,
 				T40000000000000000000001 /* GSEControllerTests */,
+				U40000000000000000000001 /* GSEControllerUITests */,
 				B100000000000000000000B2 /* Products */,
 				E072AD09E0B04C459D4A8E32 /* LocalConfig.xcconfig */,
 			);
@@ -96,6 +113,9 @@
 				B100000000000000000000AD /* BindingRow.swift */,
 				B100000000000000000000AE /* NewGroupSheet.swift */,
 				B100000000000000000000AF /* EnhancedGlassModifier.swift */,
+				B100000000000000000000B3 /* ProfileStore.swift */,
+				B100000000000000000000B4 /* KeyInjection.swift */,
+				B100000000000000000000B5 /* AppModel.swift */,
 				B100000000000000000000A7 /* Assets.xcassets */,
 				B100000000000000000000A5 /* Info.plist */,
 				B100000000000000000000A6 /* GSEController.entitlements */,
@@ -108,6 +128,7 @@
 			children = (
 				B100000000000000000000A8 /* GSEController.app */,
 				T20000000000000000000004 /* GSEControllerTests.xctest */,
+				U20000000000000000000002 /* GSEControllerUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -122,6 +143,14 @@
 				T20000000000000000000005 /* DualSenseBatteryMonitorTests.swift */,
 			);
 			path = GSEControllerTests;
+			sourceTree = "<group>";
+		};
+		U40000000000000000000001 /* GSEControllerUITests */ = {
+			isa = PBXGroup;
+			children = (
+				U20000000000000000000001 /* GSEControllerUITests.swift */,
+			);
+			path = GSEControllerUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -161,6 +190,23 @@
 			productReference = T20000000000000000000004 /* GSEControllerTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		U50000000000000000000001 /* GSEControllerUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = U70000000000000000000001 /* Build configuration list for PBXNativeTarget "GSEControllerUITests" */;
+			buildPhases = (
+				U30000000000000000000001 /* Sources (UI Tests) */,
+				U30000000000000000000002 /* Frameworks (UI Tests) */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				U80000000000000000000001 /* PBXTargetDependency */,
+			);
+			name = GSEControllerUITests;
+			productName = GSEControllerUITests;
+			productReference = U20000000000000000000002 /* GSEControllerUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -168,13 +214,17 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 2600;
-				LastUpgradeCheck = 2600;
+				LastSwiftUpdateCheck = 2640;
+				LastUpgradeCheck = 2640;
 				TargetAttributes = {
 					B100000000000000000000D0 = {
 						CreatedOnToolsVersion = 26.0;
 					};
 					T50000000000000000000001 = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = B100000000000000000000D0;
+					};
+					U50000000000000000000001 = {
 						CreatedOnToolsVersion = 26.0;
 						TestTargetID = B100000000000000000000D0;
 					};
@@ -195,6 +245,7 @@
 			targets = (
 				B100000000000000000000D0 /* GSEController */,
 				T50000000000000000000001 /* GSEControllerTests */,
+				U50000000000000000000001 /* GSEControllerUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -227,6 +278,9 @@
 				B10000000000000000000A14 /* BindingRow.swift in Sources */,
 				B10000000000000000000A15 /* NewGroupSheet.swift in Sources */,
 				B10000000000000000000A16 /* EnhancedGlassModifier.swift in Sources */,
+				B10000000000000000000A17 /* ProfileStore.swift in Sources */,
+				B10000000000000000000A18 /* KeyInjection.swift in Sources */,
+				B10000000000000000000A19 /* AppModel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -242,10 +296,25 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		U30000000000000000000001 /* Sources (UI Tests) */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				U10000000000000000000001 /* GSEControllerUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXContainerItemProxy section */
 		T80000000000000000000002 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B100000000000000000000E0 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B100000000000000000000D0;
+			remoteInfo = GSEController;
+		};
+		U80000000000000000000002 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = B100000000000000000000E0 /* Project object */;
 			proxyType = 1;
@@ -258,6 +327,11 @@
 			isa = PBXTargetDependency;
 			target = B100000000000000000000D0 /* GSEController */;
 			targetProxy = T80000000000000000000002 /* PBXContainerItemProxy */;
+		};
+		U80000000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B100000000000000000000D0 /* GSEController */;
+			targetProxy = U80000000000000000000002 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 /* Begin XCBuildConfiguration section */
@@ -429,6 +503,7 @@
 		};
 		T60000000000000000000001 /* Debug (Tests) */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = E072AD09E0B04C459D4A8E32 /* LocalConfig.xcconfig */;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
@@ -447,6 +522,7 @@
 		};
 		T60000000000000000000002 /* Release (Tests) */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = E072AD09E0B04C459D4A8E32 /* LocalConfig.xcconfig */;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
@@ -460,6 +536,42 @@
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/GSEController.app/Contents/MacOS/GSEController";
+			};
+			name = Release;
+		};
+		U60000000000000000000001 /* Debug (UI Tests) */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = E072AD09E0B04C459D4A8E32 /* LocalConfig.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).GSEControllerUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6;
+				TEST_TARGET_NAME = GSEController;
+			};
+			name = Debug;
+		};
+		U60000000000000000000002 /* Release (UI Tests) */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = E072AD09E0B04C459D4A8E32 /* LocalConfig.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).GSEControllerUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6;
+				TEST_TARGET_NAME = GSEController;
 			};
 			name = Release;
 		};
@@ -489,6 +601,15 @@
 			buildConfigurations = (
 				T60000000000000000000001 /* Debug (Tests) */,
 				T60000000000000000000002 /* Release (Tests) */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		U70000000000000000000001 /* Build configuration list for PBXNativeTarget "GSEControllerUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				U60000000000000000000001 /* Debug (UI Tests) */,
+				U60000000000000000000002 /* Release (UI Tests) */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

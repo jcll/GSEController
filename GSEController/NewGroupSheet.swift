@@ -12,9 +12,13 @@ struct NewGroupSheet: View {
         let icon: String
         let description: String
         let group: ProfileGroup
+
+        func makeGroup() -> ProfileGroup {
+            group.withFreshIDs()
+        }
     }
 
-    private static func binding(_ button: ControllerButton, mode: FireMode, modifier: KeyModifier = .none, rate: Double = 10, label: String = "") -> MacroBinding {
+    private static func binding(_ button: ControllerButton, mode: FireMode, modifier: KeyModifier = .none, rate: Double = 250, label: String = "") -> MacroBinding {
         MacroBinding(button: button, keyName: "K", keyCode: 0x28, modifier: modifier, mode: mode, rate: rate, label: label)
     }
 
@@ -26,8 +30,8 @@ struct NewGroupSheet: View {
                 icon: "pawprint.fill",
                 description: "2 rotations + 3 d-pad defensive/utility modifiers",
                 group: ProfileGroup(name: "Guardian Druid", bindings: [
-                    Self.binding(.rightShoulder, mode: .hold, rate: 10, label: "Bear Form Rotation (ST)"),
-                    Self.binding(.rightTrigger,  mode: .hold, rate: 10, label: "Bear Form Rotation (MT)"),
+                    Self.binding(.rightShoulder, mode: .hold, label: "Bear Form Rotation (ST)"),
+                    Self.binding(.rightTrigger,  mode: .hold, label: "Bear Form Rotation (MT)"),
                     Self.binding(.dpadDown,  mode: .modifierHold, modifier: .alt,   label: "Frenzied Regen"),
                     Self.binding(.dpadLeft,  mode: .modifierHold, modifier: .shift, label: "Incapacitating Roar"),
                     Self.binding(.dpadRight, mode: .modifierHold, modifier: .ctrl,  label: "Rebirth"),
@@ -39,8 +43,8 @@ struct NewGroupSheet: View {
                 icon: "shield.fill",
                 description: "2 rotations + 3 d-pad cooldown modifiers",
                 group: ProfileGroup(name: "Generic Tank", bindings: [
-                    Self.binding(.rightShoulder, mode: .hold, rate: 10, label: "Single Target Rotation"),
-                    Self.binding(.rightTrigger,  mode: .hold, rate: 10, label: "AoE Rotation"),
+                    Self.binding(.rightShoulder, mode: .hold, label: "Single Target Rotation"),
+                    Self.binding(.rightTrigger,  mode: .hold, label: "AoE Rotation"),
                     Self.binding(.dpadDown,  mode: .modifierHold, modifier: .alt,   label: "Defensive Cooldown"),
                     Self.binding(.dpadLeft,  mode: .modifierHold, modifier: .shift, label: "CC / Utility"),
                     Self.binding(.dpadRight, mode: .modifierHold, modifier: .ctrl,  label: "Taunt / Off-GCD"),
@@ -52,8 +56,8 @@ struct NewGroupSheet: View {
                 icon: "figure.martial.arts",
                 description: "2 rotations + defensive and offensive modifiers",
                 group: ProfileGroup(name: "Melee DPS", bindings: [
-                    Self.binding(.rightShoulder, mode: .hold, rate: 10, label: "Single Target Rotation"),
-                    Self.binding(.rightTrigger,  mode: .hold, rate: 10, label: "AoE Rotation"),
+                    Self.binding(.rightShoulder, mode: .hold, label: "Single Target Rotation"),
+                    Self.binding(.rightTrigger,  mode: .hold, label: "AoE Rotation"),
                     Self.binding(.dpadDown,  mode: .modifierHold, modifier: .alt,   label: "Defensive / Survival CD"),
                     Self.binding(.dpadLeft,  mode: .modifierHold, modifier: .shift, label: "Interrupt"),
                     Self.binding(.dpadRight, mode: .modifierHold, modifier: .ctrl,  label: "Major DPS Cooldown"),
@@ -65,8 +69,8 @@ struct NewGroupSheet: View {
                 icon: "wand.and.stars",
                 description: "2 rotations + defensive and burst modifiers",
                 group: ProfileGroup(name: "Ranged / Caster", bindings: [
-                    Self.binding(.rightShoulder, mode: .hold, rate: 10, label: "Main Rotation"),
-                    Self.binding(.rightTrigger,  mode: .hold, rate: 12, label: "Burst / Proc Rotation"),
+                    Self.binding(.rightShoulder, mode: .hold, label: "Main Rotation"),
+                    Self.binding(.rightTrigger,  mode: .hold, rate: 100, label: "Burst / Proc Rotation"),
                     Self.binding(.dpadDown,  mode: .modifierHold, modifier: .alt,   label: "Defensive Cooldown"),
                     Self.binding(.dpadLeft,  mode: .modifierHold, modifier: .shift, label: "Interrupt / Kick"),
                     Self.binding(.dpadRight, mode: .modifierHold, modifier: .ctrl,  label: "Major DPS Cooldown"),
@@ -78,7 +82,7 @@ struct NewGroupSheet: View {
                 icon: "cross.fill",
                 description: "1 heal rotation + 3 cooldown modifiers",
                 group: ProfileGroup(name: "Healer", bindings: [
-                    Self.binding(.rightShoulder, mode: .hold, rate: 10, label: "Main Heal Rotation"),
+                    Self.binding(.rightShoulder, mode: .hold, label: "Main Heal Rotation"),
                     Self.binding(.dpadDown,  mode: .modifierHold, modifier: .alt,   label: "Major Cooldown"),
                     Self.binding(.dpadLeft,  mode: .modifierHold, modifier: .shift, label: "Dispel / Utility"),
                     Self.binding(.dpadRight, mode: .modifierHold, modifier: .ctrl,  label: "Raid Cooldown"),
@@ -90,7 +94,7 @@ struct NewGroupSheet: View {
                 icon: "hand.point.right.fill",
                 description: "Just one button for rapid-fire macro spam",
                 group: ProfileGroup(name: "Simple", bindings: [
-                    Self.binding(.rightShoulder, mode: .hold, rate: 10, label: "Rotation"),
+                    Self.binding(.rightShoulder, mode: .hold, label: "Rotation"),
                 ])
             ),
             ProfileTemplate(
@@ -99,7 +103,7 @@ struct NewGroupSheet: View {
                 icon: "square.dashed",
                 description: "Start with one empty binding",
                 group: ProfileGroup(name: "New Profile", bindings: [
-                    Self.binding(.rightShoulder, mode: .hold, rate: 10, label: ""),
+                    Self.binding(.rightShoulder, mode: .hold, label: ""),
                 ])
             ),
         ]
@@ -119,7 +123,7 @@ struct NewGroupSheet: View {
                 LazyVGrid(columns: columns, spacing: 12) {
                     ForEach(Self.templates) { template in
                         Button(action: {
-                            store.addGroup(template.group)
+                            store.addGroup(template.makeGroup(), activateAfterAdd: true)
                             isPresented = false
                         }) {
                             HStack(alignment: .top, spacing: 10) {
@@ -144,6 +148,7 @@ struct NewGroupSheet: View {
                             .enhancedGlass(cornerRadius: 10)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityIdentifier("template-\(template.id)")
                     }
                 }
 

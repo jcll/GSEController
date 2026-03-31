@@ -33,6 +33,9 @@ final class DualSenseBatteryMonitor {
     private static let btReportID:  UInt32 = 0x31
     private static let usbStatusOffset = 53
     private static let btStatusOffset  = 54
+    private struct SendableDevice: @unchecked Sendable {
+        let value: IOHIDDevice
+    }
 
     /// Called on the main queue when battery data is parsed. (level: 0.0–1.0, isCharging)
     var onUpdate: ((Float, Bool) -> Void)?
@@ -85,6 +88,9 @@ final class DualSenseBatteryMonitor {
 
     func stop() {
         guard let m = manager else { return }
+        // Clear the matching callback before unscheduling so no queued CFRunLoop event
+        // can fire it with a dangling unretained self pointer after deallocation.
+        IOHIDManagerRegisterDeviceMatchingCallback(m, nil, nil)
         IOHIDManagerUnscheduleFromRunLoop(m, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
         IOHIDManagerClose(m, IOOptionBits(kIOHIDOptionsTypeNone))
         manager = nil
@@ -158,10 +164,23 @@ final class DualSenseBatteryMonitor {
     /// battery data. IOHIDDeviceGetReport pulls the full 78-byte 0x31 report directly.
     func pollDeviceProperty(_ device: IOHIDDevice? = nil) {
         guard let dev = device ?? lastAttachedDevice else { return }
+        if let reading = Self.readBattery(dev) {
+            onUpdate?(reading.level, reading.charging)
+        }
+    }
 
-        // Try the standard Bluetooth HID driver battery property (integer 0–100).
-        // Don't return here — the report-based paths below include charging state.
-        // If they fail, fall through to the final propertyPct fallback.
+    func pollDevicePropertyAsync(_ device: IOHIDDevice? = nil) {
+        guard let dev = device ?? lastAttachedDevice else { return }
+        let sendableDevice = SendableDevice(value: dev)
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let reading = Self.readBattery(sendableDevice.value) else { return }
+            DispatchQueue.main.async {
+                self?.onUpdate?(reading.level, reading.charging)
+            }
+        }
+    }
+
+    private static func readBattery(_ dev: IOHIDDevice) -> (level: Float, charging: Bool)? {
         var propertyPct: Float? = nil
         if let raw = IOHIDDeviceGetProperty(dev, "BatteryLevel" as CFString) as? NSNumber {
             let pct = raw.floatValue / 100.0
@@ -184,8 +203,7 @@ final class DualSenseBatteryMonitor {
         if btResult == kIOReturnSuccess, reportLen > Self.btStatusOffset,
            let (pct, charging) = Self.parseBatteryByte(buf[Self.btStatusOffset]) {
             Self.logger.info("DualSense battery (GetReport 0x31): \(Int(pct * 100))% charging=\(charging)")
-            onUpdate?(pct, charging)
-            return
+            return (pct, charging)
         }
 
         // Fallback: USB report 0x01 (covers wired connection).
@@ -196,14 +214,14 @@ final class DualSenseBatteryMonitor {
         if usbResult == kIOReturnSuccess, reportLen > Self.usbStatusOffset,
            let (pct, charging) = Self.parseBatteryByte(buf[Self.usbStatusOffset]) {
             Self.logger.info("DualSense battery (GetReport 0x01): \(Int(pct * 100))% charging=\(charging)")
-            onUpdate?(pct, charging)
-            return
+            return (pct, charging)
         }
 
         // Both report paths failed — fall back to property level with charging state unknown.
         if let pct = propertyPct {
-            onUpdate?(pct, false)
+            return (pct, false)
         }
+        return nil
     }
 
     private func handle(reportID: UInt32, data: UnsafeMutablePointer<UInt8>, length: CFIndex) {

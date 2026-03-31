@@ -21,13 +21,18 @@ class FireEngine: ObservableObject {
     }
 
     var onAccessibilityRevoked: (() -> Void)?
+    private let keyInjector: KeyInjecting
 
-    nonisolated static func clampedInterval(rate: Double) -> TimeInterval {
-        1.0 / min(max(rate, 1.0), 30.0)
+    /// Converts a rate in milliseconds to a clamped TimeInterval (seconds).
+    /// Clamps to [33ms, 1000ms] (equivalent to 1–30 pps range).
+    nonisolated static func clampedInterval(rateMs: Double) -> TimeInterval {
+        min(max(rateMs, 33.0), 1000.0) / 1000.0
     }
 
     private var activeTimers: [ControllerButton: DispatchSourceTimer] = [:]
-    private var heldModifiers: Set<KeyModifier> = []
+    private var activeBindings: [ControllerButton: MacroBinding] = [:]
+    var heldModifiers: Set<KeyModifier> = []
+    private var heldModifierCounts: [KeyModifier: Int] = [:]
     nonisolated(unsafe) private var activity: NSObjectProtocol?
     private let fireQueue = DispatchQueue(label: "\(FireEngine.bundleID).fire", qos: .userInteractive)
 
@@ -41,6 +46,10 @@ class FireEngine: ObservableObject {
     // Runs on @MainActor while any timers are active; polls AX state into _axEnabled.
     private var axMonitorTask: Task<Void, Never>?
 
+    init(keyInjector: KeyInjecting = KeySimulatorBridge()) {
+        self.keyInjector = keyInjector
+    }
+
     deinit {
         for (_, timer) in activeTimers { timer.cancel() }
         if let a = activity { ProcessInfo.processInfo.endActivity(a) }
@@ -48,14 +57,19 @@ class FireEngine: ObservableObject {
 
     func startFiring(binding: MacroBinding) {
         guard activeTimers[binding.button] == nil else { return }
+        let injector = keyInjector
 
         // Start the @MainActor AX monitor if it isn't already running.
         // This is the only place KeySimulator.isAccessibilityEnabled is called — safely on @MainActor.
+        // Seed from current state immediately so there is no blind window at startup where
+        // _axEnabled=true but AX is actually revoked — without this, spurious key events can
+        // fire in the 0–3s window before the monitor task's first sleep completes.
+        _axEnabled.withLock { $0 = injector.isAccessibilityEnabled }
         if axMonitorTask == nil {
-            axMonitorTask = Task { [weak self] in
+            axMonitorTask = Task { [weak self, injector] in
                 while !Task.isCancelled {
                     guard let self, !Task.isCancelled else { break }
-                    let ok = KeySimulator.isAccessibilityEnabled
+                    let ok = injector.isAccessibilityEnabled
                     self._axEnabled.withLock { $0 = ok }
                     if !ok {
                         Self.logger.warning("Accessibility permission revoked, stopping")
@@ -69,11 +83,10 @@ class FireEngine: ObservableObject {
         }
 
         let keyCode = binding.keyCode
-        let interval = FireEngine.clampedInterval(rate: binding.rate)
+        let interval = FireEngine.clampedInterval(rateMs: binding.rate)
         let focusLock = _requireWoWFocus
         let wowLock = _wowIsActive
         let axLock = _axEnabled
-
         // Build the timer from a nonisolated helper so the event handler closure is
         // formed outside any actor context. In Swift 6 on macOS 26, non-@Sendable closure
         // parameters inherit the caller's actor isolation; if setEventHandler's handler
@@ -82,10 +95,13 @@ class FireEngine: ObservableObject {
         let timer = FireEngine.makeTimer(
             queue: fireQueue, interval: interval,
             keyCode: keyCode, focusLock: focusLock,
-            wowLock: wowLock, axLock: axLock
+            wowLock: wowLock, axLock: axLock,
+            keyInjector: injector
         )
 
         activeTimers[binding.button] = timer
+        activeBindings[binding.button] = binding
+        holdModifierIfNeeded(binding.modifier)
 
         if activity == nil {
             activity = ProcessInfo.processInfo.beginActivity(
@@ -106,14 +122,15 @@ class FireEngine: ObservableObject {
         keyCode: UInt16,
         focusLock: OSAllocatedUnfairLock<Bool>,
         wowLock: OSAllocatedUnfairLock<Bool>,
-        axLock: OSAllocatedUnfairLock<Bool>
+        axLock: OSAllocatedUnfairLock<Bool>,
+        keyInjector: KeyInjecting
     ) -> DispatchSourceTimer {
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now(), repeating: interval, leeway: .milliseconds(4))
         timer.setEventHandler {
             if !axLock.withLock({ $0 }) { return }
             if focusLock.withLock({ $0 }) && !wowLock.withLock({ $0 }) { return }
-            KeySimulator.pressKey(keyCode)
+            keyInjector.pressKey(keyCode)
         }
         return timer
     }
@@ -121,6 +138,9 @@ class FireEngine: ObservableObject {
     func stopFiring(button: ControllerButton) {
         activeTimers[button]?.cancel()
         activeTimers[button] = nil
+        if let binding = activeBindings.removeValue(forKey: button) {
+            releaseModifierIfNeeded(binding.modifier)
+        }
         if activeTimers.isEmpty {
             axMonitorTask?.cancel()
             axMonitorTask = nil
@@ -130,10 +150,12 @@ class FireEngine: ObservableObject {
     }
 
     func stopAll() {
-        for modifier in heldModifiers { KeySimulator.modifierUp(modifier) }
+        for modifier in heldModifiers { keyInjector.modifierUp(modifier) }
         heldModifiers.removeAll()
+        heldModifierCounts.removeAll()
         for (_, timer) in activeTimers { timer.cancel() }
         activeTimers.removeAll()
+        activeBindings.removeAll()
         axMonitorTask?.cancel()
         axMonitorTask = nil
         isFiring = false
@@ -142,13 +164,40 @@ class FireEngine: ObservableObject {
 
     func modifierDown(_ modifier: KeyModifier) {
         guard modifier != .none else { return }
-        KeySimulator.modifierDown(modifier)
-        heldModifiers.insert(modifier)
+        holdModifierIfNeeded(modifier)
     }
 
     func modifierUp(_ modifier: KeyModifier) {
         guard modifier != .none else { return }
-        KeySimulator.modifierUp(modifier)
-        heldModifiers.remove(modifier)
+        releaseModifierIfNeeded(modifier)
+    }
+
+    func tap(binding: MacroBinding) {
+        holdModifierIfNeeded(binding.modifier)
+        keyInjector.pressKey(binding.keyCode)
+        releaseModifierIfNeeded(binding.modifier)
+    }
+
+    private func holdModifierIfNeeded(_ modifier: KeyModifier) {
+        guard modifier != .none else { return }
+        let currentCount = heldModifierCounts[modifier, default: 0]
+        if currentCount == 0 {
+            keyInjector.modifierDown(modifier)
+        }
+        heldModifierCounts[modifier] = currentCount + 1
+        heldModifiers.insert(modifier)
+    }
+
+    private func releaseModifierIfNeeded(_ modifier: KeyModifier) {
+        guard modifier != .none else { return }
+        let currentCount = heldModifierCounts[modifier, default: 0]
+        guard currentCount > 0 else { return }
+        if currentCount == 1 {
+            keyInjector.modifierUp(modifier)
+            heldModifierCounts.removeValue(forKey: modifier)
+            heldModifiers.remove(modifier)
+        } else {
+            heldModifierCounts[modifier] = currentCount - 1
+        }
     }
 }

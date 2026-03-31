@@ -1,65 +1,93 @@
 import Foundation
 import GameController
 import AppKit
+import Observation
 import os
 import Combine
 import UserNotifications
 
 @MainActor
-class ControllerManager: ObservableObject {
+@Observable
+final class ControllerManager {
     private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.example.gsecontroller", category: "ControllerManager")
 
-    @Published var controllerName: String?
-    @Published var isConnected = false
-    @Published var isFiring = false
-    @Published var isRunning = false
-    @Published var statusMessage = "Ready"
-    @Published var hasAccessibility = false
-    @Published var hasHelperAccessibility = false
-    @Published var batteryLevel: Float? = nil
-    @Published var batteryCharging: Bool = false
-    @Published var helperReady: Bool = true
-    @Published var fifoHealthy: Bool = true
-    @Published var wowIsActive: Bool = false {
+    var controllerName: String?
+    var isConnected = false
+    var isFiring = false
+    var isRunning = false
+    var isStarting = false
+    var statusMessage = "Ready"
+    var hasAccessibility = false
+    var hasHelperAccessibility = false
+    var batteryLevel: Float? = nil
+    var batteryCharging = false
+    var helperReady = true
+    var helperSetupFailed = false
+    var fifoHealthy = true
+    var wowIsActive = false {
         didSet { updateStatusIfRunning() }
     }
-    @Published var requireWoWFocus: Bool {
+    var requireWoWFocus: Bool {
         didSet {
             defaults.set(requireWoWFocus, forKey: "requireWoWFocus")
             fireEngine.requireWoWFocus = requireWoWFocus
         }
     }
 
-    private let defaults: UserDefaults
-    private let fireEngine = FireEngine()
-    private var controller: GCController?
-    private var activeGroupName: String?
-    private var activeBindings: [MacroBinding]?
-    private var firingObserver: AnyCancellable?
+    @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let keyInjector: KeyInjecting
+    @ObservationIgnored private let fireEngine: FireEngine
+    @ObservationIgnored private var controller: GCController?
+    @ObservationIgnored private var activeGroupName: String?
+    @ObservationIgnored private var activeBindings: [MacroBinding]?
+    @ObservationIgnored private var startRequestID = UUID()
+    @ObservationIgnored private var firingObserver: AnyCancellable?
     // nonisolated(unsafe) so deinit can invalidate it without a MainActor hop
-    nonisolated(unsafe) private var batteryTimer: Timer?
-    private let dualSenseBattery = DualSenseBatteryMonitor()
-    private var lowBatteryNotified = false
+    @ObservationIgnored nonisolated(unsafe) private var batteryTimer: Timer?
+    @ObservationIgnored private let dualSenseBattery = DualSenseBatteryMonitor()
+    @ObservationIgnored private var lowBatteryNotified = false
 
-    init(defaults: UserDefaults = .standard) {
+    struct TestState {
+        var controllerName: String = "Test Controller"
+        var isConnected: Bool = true
+        var hasAccessibility: Bool = true
+        var hasHelperAccessibility: Bool = true
+        var helperReady: Bool = true
+    }
+
+    init(
+        defaults: UserDefaults = .standard,
+        keyInjector: KeyInjecting = KeySimulatorBridge(),
+        testState: TestState? = nil
+    ) {
         self.defaults = defaults
+        self.keyInjector = keyInjector
+        self.fireEngine = FireEngine(keyInjector: keyInjector)
         self.requireWoWFocus = defaults.object(forKey: "requireWoWFocus") as? Bool ?? true
-        GCController.shouldMonitorBackgroundEvents = true
-        setupNotifications()
-        setupAppTracking()
-        setupPermissionRecheck()
-        KeySimulator.ensureHelper { [weak self] ready in
-            self?.helperReady = ready
-        }
-        KeySimulator.onFIFOFailure = { [weak self] in
-            Task { @MainActor [weak self] in self?.fifoHealthy = false }
-        }
-        KeySimulator.onFIFORecovered = { [weak self] in
-            Task { @MainActor [weak self] in self?.fifoHealthy = true }
+
+        if testState == nil {
+            GCController.shouldMonitorBackgroundEvents = true
+            setupNotifications()
+            setupAppTracking()
+            setupPermissionRecheck()
         }
 
-        // Capture before the Task so we don't race with a connect notification.
-        let existing = GCController.controllers().first
+        if testState == nil {
+            helperReady = false
+            helperSetupFailed = false
+            keyInjector.ensureHelper { [weak self] ready in
+                self?.helperReady = ready
+                self?.helperSetupFailed = !ready
+            }
+            KeySimulator.onFIFOFailure = { [weak self] in
+                Task { @MainActor [weak self] in self?.fifoHealthy = false }
+            }
+            KeySimulator.onFIFORecovered = { [weak self] in
+                Task { @MainActor [weak self] in self?.fifoHealthy = true }
+            }
+        }
+
+        let existing = testState == nil ? GCController.controllers().first : nil
 
         fireEngine.requireWoWFocus = requireWoWFocus
         fireEngine.onAccessibilityRevoked = { [weak self] in
@@ -79,12 +107,23 @@ class ControllerManager: ObservableObject {
             }
         }
 
-        // Defer @Published mutations out of init — ControllerManager is a @StateObject so
-        // init runs during SwiftUI's first render pass. Any objectWillChange.send() here
-        // triggers "Publishing changes from within view updates" warnings.
+        if let testState {
+            self.controllerName = testState.controllerName
+            self.isConnected = testState.isConnected
+            self.hasAccessibility = testState.hasAccessibility
+            self.hasHelperAccessibility = testState.hasHelperAccessibility
+            self.helperReady = testState.helperReady
+            self.helperSetupFailed = !testState.helperReady
+            self.statusMessage = testState.isConnected ? "Controller connected" : "No controller connected"
+            return
+        }
+
+        // Defer observable mutations out of init — ContentView stores ControllerManager
+        // inside @State via AppModel, so init still runs during SwiftUI's first render pass.
+        // Mutating tracked state here can still trigger update-cycle warnings.
         Task { @MainActor [weak self] in
             guard let self else { return }
-            self.hasAccessibility = KeySimulator.isAccessibilityEnabled
+            self.hasAccessibility = self.keyInjector.isAccessibilityEnabled
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
             self.dualSenseBattery.onUpdate = { [weak self] level, charging in
                 guard let self else { return }
@@ -132,6 +171,7 @@ class ControllerManager: ObservableObject {
     }
 
     private func connectController(_ gc: GCController) {
+        guard controller == nil else { return }
         Self.logger.info("Controller connected: \(gc.vendorName ?? "unknown", privacy: .public)")
         controller = gc
         controllerName = gc.vendorName ?? "Controller"
@@ -154,7 +194,7 @@ class ControllerManager: ObservableObject {
 
     @objc private func appDidBecomeActive() {
         guard !hasAccessibility || !hasHelperAccessibility else { return }
-        // Defer to avoid publishing @Published changes during a view update cycle.
+        // Defer to avoid observable mutations during a view update cycle.
         Task { @MainActor [weak self] in self?.checkAccessibility() }
     }
 
@@ -192,7 +232,7 @@ class ControllerManager: ObservableObject {
         }
     }
 
-    private nonisolated(unsafe) static let wowBundleIDs: Set<String> = [
+    private nonisolated static let wowBundleIDs: Set<String> = [
         "com.blizzard.worldofwarcraft",
         "com.blizzard.worldofwarcraftclassic",
         "com.blizzard.wow",
@@ -219,12 +259,12 @@ class ControllerManager: ObservableObject {
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(2))
             self?.updateBattery()
-            self?.dualSenseBattery.pollDeviceProperty()
+            self?.dualSenseBattery.pollDevicePropertyAsync()
         }
         batteryTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.updateBattery()
-                self?.dualSenseBattery.pollDeviceProperty()
+                self?.dualSenseBattery.pollDevicePropertyAsync()
             }
         }
     }
@@ -283,30 +323,53 @@ class ControllerManager: ObservableObject {
     // MARK: - Start / Stop
 
     func start(group: ProfileGroup) {
+        let duplicateButtons = group.duplicateButtons
+        guard duplicateButtons.isEmpty else {
+            statusMessage = "Resolve duplicate button assignments before starting"
+            return
+        }
         guard isConnected else {
             statusMessage = "No controller connected"
             return
         }
-        hasAccessibility = KeySimulator.isAccessibilityEnabled
+        hasAccessibility = keyInjector.isAccessibilityEnabled
         guard hasAccessibility else {
-            KeySimulator.requestAccessibility()
+            keyInjector.requestAccessibility()
             statusMessage = "Grant Accessibility access, then try again"
             return
         }
-        activeGroupName = group.name
-        activeBindings = group.bindings
-        isRunning = true
-        KeySimulator.ensureHelper { [weak self] ready in
-            self?.helperReady = ready
-        }
+
+        let requestID = UUID()
+        startRequestID = requestID
+        isStarting = true
+        statusMessage = "Starting helper…"
         fireEngine.requireWoWFocus = requireWoWFocus
         refreshWoWFocus()
-        Self.logger.info("Started group \"\(group.name, privacy: .public)\" with \(group.bindings.count) binding(s)")
-        statusMessage = requireWoWFocus && !wowIsActive ? "Active — waiting for WoW" : "Active — \(group.name)"
-        attachHandlers(for: group.bindings)
+        keyInjector.ensureHelper { [weak self] ready in
+            guard let self, self.startRequestID == requestID else { return }
+            self.helperReady = ready
+            self.helperSetupFailed = !ready
+            self.isStarting = false
+            guard ready else {
+                self.isRunning = false
+                self.activeGroupName = nil
+                self.activeBindings = nil
+                self.statusMessage = "Key helper failed to compile"
+                return
+            }
+
+            self.activeGroupName = group.name
+            self.activeBindings = group.bindings
+            self.isRunning = true
+            Self.logger.info("Started group \"\(group.name, privacy: .public)\" with \(group.bindings.count) binding(s)")
+            self.statusMessage = self.requireWoWFocus && !self.wowIsActive ? "Active — waiting for WoW" : "Active — \(group.name)"
+            self.attachHandlers(for: group.bindings)
+        }
     }
 
     func stop() {
+        startRequestID = UUID()
+        isStarting = false
         fireEngine.stopAll()
         clearButtonHandlers()
         // Unconditionally release all modifiers — guards against modifier keys
@@ -359,7 +422,7 @@ class ControllerManager: ObservableObject {
 
     private func clearButtonHandlers() {
         guard let gamepad = controller?.extendedGamepad else { return }
-        let buttons = activeBindings?.map(\.button) ?? ControllerButton.allCases
+        let buttons = activeBindings?.map(\.button) ?? []
         for button in buttons {
             buttonInput(for: button, on: gamepad)?.pressedChangedHandler = nil
         }
@@ -379,7 +442,7 @@ class ControllerManager: ObservableObject {
 
         case .tap:
             if pressed {
-                KeySimulator.pressKey(binding.keyCode)
+                fireEngine.tap(binding: binding)
             }
 
         case .modifierHold:
@@ -392,10 +455,34 @@ class ControllerManager: ObservableObject {
     }
 
     func checkAccessibility() {
-        hasAccessibility = KeySimulator.isAccessibilityEnabled
+        hasAccessibility = keyInjector.isAccessibilityEnabled
         Task.detached(priority: .userInitiated) { [weak self] in
-            let helperAx = KeySimulator.isHelperAccessibilityEnabled
+            let helperAx = self?.keyInjector.isHelperAccessibilityEnabled ?? false
             await MainActor.run { self?.hasHelperAccessibility = helperAx }
         }
+    }
+
+    func retryHelperSetup() {
+        helperReady = false
+        helperSetupFailed = false
+        statusMessage = "Preparing key helper…"
+        keyInjector.ensureHelper { [weak self] ready in
+            self?.helperReady = ready
+            self?.helperSetupFailed = !ready
+            if !ready {
+                self?.statusMessage = "Key helper failed to compile"
+            } else if self?.isConnected == true {
+                self?.statusMessage = "Controller connected"
+            }
+        }
+    }
+
+    func openHelperAccessibilitySettings() {
+        keyInjector.openAccessibilitySettings()
+        keyInjector.revealHelperInFinder()
+    }
+
+    func requestAccessibilityPermission() {
+        keyInjector.requestAccessibility()
     }
 }

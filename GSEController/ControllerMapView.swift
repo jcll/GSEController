@@ -59,9 +59,10 @@ struct ControllerMapView: View {
     }
 
     private func actionBadgeText(_ b: MacroBinding) -> String {
+        let keyText = b.modifier == .none ? b.keyName : "\(b.modifier.displayName.prefix(1))+\(b.keyName)"
         switch b.mode {
-        case .hold:         return "R·\(b.keyName)·\(Int(b.rate))/s"
-        case .tap:          return "T·\(b.keyName)"
+        case .hold:         return "R·\(keyText)·\(Int(b.rate))ms"
+        case .tap:          return "T·\(keyText)"
         case .modifierHold: return "M·\(b.modifier.displayName)"
         }
     }
@@ -91,9 +92,10 @@ struct ControllerMapView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel({
             guard let b else { return "\(button.displayName): unbound" }
+            let keyText = b.modifier == .none ? b.keyName : "\(b.modifier.displayName) plus \(b.keyName)"
             switch b.mode {
-            case .hold:         return "\(button.displayName): \(b.keyName), Rapid, \(Int(b.rate)) per second"
-            case .tap:          return "\(button.displayName): \(b.keyName), Tap"
+            case .hold:         return "\(button.displayName): \(keyText), Rapid, \(Int(b.rate)) milliseconds"
+            case .tap:          return "\(button.displayName): \(keyText), Tap"
             case .modifierHold: return "\(button.displayName): \(b.modifier.displayName) modifier"
             }
         }())

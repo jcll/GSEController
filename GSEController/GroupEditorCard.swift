@@ -16,6 +16,17 @@ struct GroupEditorCard: View {
 
     private var hasChanges: Bool { draft != group }
     private var nameIsBlank: Bool { draft.name.trimmingCharacters(in: .whitespaces).isEmpty }
+    private var duplicateButtons: Set<ControllerButton> { draft.bindings.duplicateButtons }
+    private var hasDuplicateButtons: Bool { !duplicateButtons.isEmpty }
+    private var usedButtonsByBindingID: [UUID: Set<ControllerButton>] {
+        let buttonsByID = Dictionary(uniqueKeysWithValues: draft.bindings.map { ($0.id, $0.button) })
+        return Dictionary(uniqueKeysWithValues: draft.bindings.map { binding in
+            let used = Set(buttonsByID.compactMap { id, button in
+                id == binding.id ? nil : button
+            })
+            return (binding.id, used)
+        })
+    }
 
     var body: some View {
         VStack(spacing: 12) {
@@ -23,6 +34,7 @@ struct GroupEditorCard: View {
                 VStack(alignment: .trailing, spacing: 2) {
                     TextField("Group name", text: $draft.name)
                         .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("group-name-field")
                     if nameIsBlank {
                         Text("Name required")
                             .font(.caption2)
@@ -42,7 +54,8 @@ struct GroupEditorCard: View {
                     ForEach($draft.bindings) { $binding in
                         BindingRow(
                             binding: $binding,
-                            usedButtons: Set(draft.bindings.filter { $0.id != binding.id }.map(\.button)),
+                            usedButtons: usedButtonsByBindingID[binding.id] ?? [],
+                            hasDuplicateAssignment: duplicateButtons.contains(binding.button),
                             canDelete: draft.bindings.count > 1,
                             onDelete: { draft.bindings.removeAll { $0.id == binding.id } }
                         )
@@ -66,6 +79,12 @@ struct GroupEditorCard: View {
                         .foregroundStyle(.secondary)
                 }
 
+                if hasDuplicateButtons {
+                    Text("Each controller button can only be assigned once")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+
                 Button(action: { onSave(draft) }) {
                     Text("Save")
                         .fontWeight(.semibold)
@@ -73,13 +92,16 @@ struct GroupEditorCard: View {
                 .buttonStyle(.glassProminent)
                 .tint(hasChanges ? .blue : nil)
                 .controlSize(.small)
-                .disabled(!hasChanges || nameIsBlank)
+                .disabled(!hasChanges || nameIsBlank || hasDuplicateButtons)
+                .accessibilityIdentifier("save-group-button")
             }
         }
         .padding(16)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
         .enhancedGlass(cornerRadius: 12, tint: hasChanges ? .blue : nil)
-        .onChange(of: group) { _, newGroup in draft = newGroup }
+        .onChange(of: group) { _, newGroup in
+            draft = newGroup
+        }
     }
 
     private func addBinding() {
@@ -93,7 +115,7 @@ struct GroupEditorCard: View {
             keyCode: 0x28,
             modifier: modifier,
             mode: mode,
-            rate: 10
+            rate: 250
         ))
     }
 }

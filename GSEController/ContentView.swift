@@ -1,19 +1,28 @@
 import SwiftUI
-import AppKit
+import Observation
 
 struct ContentView: View {
-    @StateObject private var store = ProfileStore()
-    @StateObject private var controller = ControllerManager()
+    @State private var model = AppModel()
     @State private var showingCPInfo = false
     @State private var showingNewGroup = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var groupToDelete: ProfileGroup? = nil
-    @State private var importErrorMessage: String? = nil
+
+    private var store: ProfileStore { model.store }
+    private var controller: ControllerManager { model.controller }
 
     var body: some View {
+        @Bindable var model = model
         NavigationSplitView(columnVisibility: $columnVisibility) {
             VStack(spacing: 0) {
-                List(store.groups, id: \.id, selection: $store.activeGroupId) { g in
+                List(
+                    store.groups,
+                    id: \.id,
+                    selection: Binding(
+                        get: { store.activeGroupId },
+                        set: { model.selectGroup($0) }
+                    )
+                ) { g in
                     VStack(alignment: .leading, spacing: 2) {
                         Text(g.name)
                             .lineLimit(1)
@@ -30,6 +39,8 @@ struct ContentView: View {
                             }
                         }
                     }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier(profileRowIdentifier(for: g.name))
                 }
 
                 Divider()
@@ -44,6 +55,7 @@ struct ContentView: View {
                     .buttonStyle(.plain)
                     .help("New profile")
                     .accessibilityLabel("New profile")
+                    .accessibilityIdentifier("new-profile-button")
 
                     if store.groups.count > 1,
                        let id = store.activeGroupId,
@@ -63,25 +75,19 @@ struct ContentView: View {
                     Spacer()
 
                     Menu {
-                        Button("Export Profiles…") { exportProfiles() }
-                        Button("Import Profiles…") { importProfiles() }
+                        Button("Export Profiles…") { model.exportProfiles() }
+                        Button("Import Profiles…") { model.importProfiles() }
                     } label: {
                         Image(systemName: "ellipsis")
                             .frame(width: 28, height: 24)
                     }
                     .buttonStyle(.plain)
                     .help("Export or import profiles")
+                    .accessibilityLabel("Profile actions")
+                    .accessibilityIdentifier("profile-actions-button")
                 }
                 .padding(.horizontal, 4)
                 .frame(height: 28)
-                .alert("Import Failed", isPresented: Binding(
-                    get: { importErrorMessage != nil },
-                    set: { if !$0 { importErrorMessage = nil } }
-                )) {
-                    Button("OK", role: .cancel) { importErrorMessage = nil }
-                } message: {
-                    Text(importErrorMessage ?? "")
-                }
             }
             .navigationTitle("")
             .toolbar(removing: .sidebarToggle)
@@ -94,7 +100,11 @@ struct ContentView: View {
                         permissionSetupCard
                     }
 
-                    if !controller.helperReady {
+                    if !controller.helperReady && !controller.helperSetupFailed {
+                        helperPreparingCard
+                    }
+
+                    if controller.helperSetupFailed {
                         helperErrorCard
                     }
 
@@ -104,13 +114,11 @@ struct ContentView: View {
 
                     if let group = store.activeGroup {
                         GroupEditorCard(group: group, onSave: { saved in
-                            if let idx = store.groups.firstIndex(where: { $0.id == saved.id }) {
-                                store.groups[idx] = saved
-                            }
+                            model.saveGroup(saved)
                         })
-                        .disabled(controller.isRunning)
-                        .opacity(controller.isRunning ? 0.6 : 1.0)
-                        if controller.isRunning {
+                        .disabled(controller.isRunning || controller.isStarting)
+                        .opacity((controller.isRunning || controller.isStarting) ? 0.6 : 1.0)
+                        if controller.isRunning || controller.isStarting {
                             Text("Stop the controller to edit bindings")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -146,14 +154,12 @@ struct ContentView: View {
                         Image(systemName: "sidebar.left")
                     }
                     .help("Toggle Sidebar")
+                    .accessibilityLabel("Toggle sidebar")
                 }
             }
         }
         .frame(minWidth: 640, minHeight: 600)
-        .onChange(of: store.activeGroupId) { _, _ in
-            if controller.isRunning { controller.stop() }
-        }
-        .onAppear { Task { @MainActor in controller.checkAccessibility() } }
+        .onAppear { model.onAppear() }
         .sheet(isPresented: $showingCPInfo) { consolePortSheet }
         .sheet(isPresented: $showingNewGroup) {
             NewGroupSheet(store: store, isPresented: $showingNewGroup)
@@ -164,40 +170,19 @@ struct ContentView: View {
             titleVisibility: .visible
         ) {
             Button("Delete", role: .destructive) {
-                if let g = groupToDelete { store.deleteGroup(g) }
+                if let g = groupToDelete { model.deleteGroup(g) }
                 groupToDelete = nil
             }
             Button("Cancel", role: .cancel) { groupToDelete = nil }
         } message: {
             Text("This profile and all its bindings will be permanently deleted.")
         }
-    }
-
-    // MARK: - Export / Import
-
-    private func exportProfiles() {
-        guard let data = try? store.exportData() else { return }
-        let panel = NSSavePanel()
-        panel.allowedFileTypes = ["json"]
-        panel.nameFieldStringValue = "gsecontroller-profiles.json"
-        panel.begin { response in
-            guard response == .OK, let url = panel.url else { return }
-            try? data.write(to: url, options: .atomic)
-        }
-    }
-
-    private func importProfiles() {
-        let panel = NSOpenPanel()
-        panel.allowedFileTypes = ["json"]
-        panel.allowsMultipleSelection = false
-        panel.begin { response in
-            guard response == .OK, let url = panel.url else { return }
-            do {
-                let data = try Data(contentsOf: url)
-                try store.importData(data)
-            } catch {
-                importErrorMessage = error.localizedDescription
-            }
+        .alert(item: $model.activeAlert) { alert in
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message),
+                dismissButton: .default(Text("OK"))
+            )
         }
     }
 
@@ -286,8 +271,7 @@ struct ContentView: View {
                 detail: "Sends keystrokes to WoW. Open Accessibility settings, then drag the helper in.",
                 actions: {
                     Button("Open Settings") {
-                        KeySimulator.openAccessibilitySettings()
-                        KeySimulator.revealHelperInFinder()
+                        controller.openHelperAccessibilitySettings()
                     }
                     .buttonStyle(.glass)
                     .controlSize(.small)
@@ -303,7 +287,8 @@ struct ContentView: View {
                     : "Complete Step 1 first, then grant access here.",
                 actions: {
                     Button("Grant Access") {
-                        KeySimulator.requestAccessibility()
+                        controller.checkAccessibility()
+                        controller.requestAccessibilityPermission()
                     }
                     .buttonStyle(.glass)
                     .controlSize(.small)
@@ -329,6 +314,23 @@ struct ContentView: View {
         .padding(14)
         .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.orange.opacity(0.3), lineWidth: 0.5))
+    }
+
+    private var helperPreparingCard: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+                .controlSize(.small)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Preparing key helper")
+                    .font(.callout.weight(.semibold))
+                Text("Compiling and reconnecting the helper before Start becomes available.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(14)
+        .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
     }
 
     private func permissionRow<Actions: View>(
@@ -371,11 +373,16 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Key helper failed to compile")
                     .font(.callout.weight(.semibold))
-                Text("Run xcode-select --install in Terminal, then press Start to retry.")
+                Text("Run xcode-select --install in Terminal, then retry helper setup.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            Button("Retry") {
+                controller.retryHelperSetup()
+            }
+            .buttonStyle(.glass)
+            .controlSize(.small)
         }
         .padding(14)
         .background(.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
@@ -405,7 +412,13 @@ struct ContentView: View {
 
     private var optionsRow: some View {
         HStack {
-            Toggle("Only fire when WoW is focused", isOn: $controller.requireWoWFocus)
+            Toggle(
+                "Only fire when WoW is focused",
+                isOn: Binding(
+                    get: { controller.requireWoWFocus },
+                    set: { controller.requireWoWFocus = $0 }
+                )
+            )
                 .font(.callout)
             Spacer()
             Button(action: { showingCPInfo = true }) {
@@ -414,6 +427,7 @@ struct ContentView: View {
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
             .help("ConsolePort compatibility")
+            .accessibilityLabel("ConsolePort compatibility")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -494,6 +508,7 @@ struct ContentView: View {
                 .foregroundStyle(controller.isFiring ? .primary : .secondary)
                 .animation(.easeInOut(duration: 0.2), value: controller.isFiring)
                 .accessibilityAddTraits(.updatesFrequently)
+                .accessibilityIdentifier("status-message")
             Spacer()
         }
         .padding(.horizontal, 12)
@@ -515,15 +530,11 @@ struct ContentView: View {
 
     @ViewBuilder private var startStopButton: some View {
         Button(action: {
-            if controller.isRunning {
-                controller.stop()
-            } else if let group = store.activeGroup {
-                controller.start(group: group)
-            }
+            model.startOrStopSelectedGroup()
         }) {
             Label(
-                controller.isRunning ? "Stop" : "Start",
-                systemImage: controller.isRunning ? "stop.fill" : "play.fill"
+                controller.isStarting ? "Starting…" : (controller.isRunning ? "Stop" : "Start"),
+                systemImage: controller.isStarting ? "hourglass" : (controller.isRunning ? "stop.fill" : "play.fill")
             )
             .font(.title3.weight(.semibold))
             .frame(maxWidth: .infinity)
@@ -531,27 +542,55 @@ struct ContentView: View {
         }
         .buttonStyle(.glassProminent)
         .tint(controller.isRunning ? .red : .green)
-        .disabled(!controller.isConnected || store.activeGroup?.bindings.isEmpty == true || !controller.helperReady)
+        .accessibilityLabel(
+            controller.isStarting ? "Starting" : (controller.isRunning ? "Stop" : "Start")
+        )
+        .accessibilityIdentifier("start-stop-button")
+        .disabled(
+            controller.isStarting ||
+            !controller.isConnected ||
+            store.activeGroup?.bindings.isEmpty == true ||
+            store.activeGroup?.hasDuplicateButtons == true ||
+            !controller.helperReady
+        )
         .help({
+            if controller.isStarting { return "Preparing the helper and session" }
             if !controller.isConnected { return "Connect a controller to start" }
             if store.activeGroup?.bindings.isEmpty == true { return "Add at least one binding to start" }
-            if !controller.helperReady { return "Key helper failed to compile — see banner above" }
+            if store.activeGroup?.hasDuplicateButtons == true { return "Each controller button can only be assigned once" }
+            if !controller.helperReady {
+                return controller.helperSetupFailed
+                    ? "Key helper failed to compile — see banner above"
+                    : "Preparing key helper…"
+            }
             return ""
         }())
 
-        if !controller.isRunning {
+        if controller.isStarting {
+            Text("Preparing the helper and activating your current profile")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else if !controller.isRunning {
             Group {
                 if !controller.isConnected {
                     Text("Connect a controller to start")
                 } else if store.activeGroup?.bindings.isEmpty == true {
                     Text("Add at least one binding to start")
+                } else if store.activeGroup?.hasDuplicateButtons == true {
+                    Text("Each controller button can only be assigned once")
                 } else if !controller.helperReady {
-                    Text("Key helper failed — see banner above")
+                    Text(controller.helperSetupFailed ? "Key helper failed — see banner above" : "Preparing key helper…")
                 }
             }
             .font(.caption)
             .foregroundStyle(.secondary)
         }
+    }
+
+    private func profileRowIdentifier(for name: String) -> String {
+        let pieces = name.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+        let slug = pieces.isEmpty ? "profile" : pieces.joined(separator: "-")
+        return "profile-row-\(slug)"
     }
 
 }

@@ -5,6 +5,7 @@ import SwiftUI
 struct BindingRow: View {
     @Binding var binding: MacroBinding
     let usedButtons: Set<ControllerButton>
+    let hasDuplicateAssignment: Bool
     let canDelete: Bool
     let onDelete: () -> Void
 
@@ -17,9 +18,10 @@ struct BindingRow: View {
     }
 
     private var headlineAction: String {
+        let keyText = binding.modifier == .none ? binding.keyName : "\(binding.modifier.displayName)+\(binding.keyName)"
         switch binding.mode {
-        case .hold:         return "\(binding.keyName) · Rapid · \(Int(binding.rate))×/s"
-        case .tap:          return "\(binding.keyName) · Tap"
+        case .hold:         return "\(keyText) · Rapid · \(Int(binding.rate))ms"
+        case .tap:          return "\(keyText) · Tap"
         case .modifierHold: return "Modifier: \(binding.modifier.displayName)"
         }
     }
@@ -38,7 +40,9 @@ struct BindingRow: View {
             HStack(spacing: 8) {
                 Picker("Button", selection: $binding.button) {
                     ForEach(ControllerButton.allCases) { btn in
-                        Text(btn.displayName).tag(btn)
+                        Text(btn.displayName)
+                            .tag(btn)
+                            .disabled(usedButtons.contains(btn) && btn != binding.button)
                     }
                 }
                 .labelsHidden()
@@ -75,7 +79,7 @@ struct BindingRow: View {
                 }
             }
 
-            if usedButtons.contains(binding.button) {
+            if hasDuplicateAssignment {
                 Label("Already used by another binding", systemImage: "exclamationmark.triangle.fill")
                     .font(.caption2)
                     .foregroundStyle(.orange)
@@ -166,22 +170,23 @@ struct BindingRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(width: 30, alignment: .leading)
-                ratePresetButton("Slow",      value: 6)
-                ratePresetButton("Standard",  value: 10)
-                ratePresetButton("Fast",      value: 15)
-                ratePresetButton("Very Fast", value: 20)
+                ForEach(ProfileGroup.ratePresets, id: \.value) { preset in
+                    ratePresetButton(preset.label, value: preset.value)
+                }
                 Spacer()
-                Text("\(Int(binding.rate))×/sec")
+                Text("\(Int(binding.rate))ms")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
             if isCustom {
                 HStack {
-                    Slider(value: $binding.rate, in: 1...30, step: 1)
-                    Text("\(Int(binding.rate))/s")
+                    Text("Fast").font(.caption2).foregroundStyle(.tertiary)
+                    Slider(value: $binding.rate, in: 50...500, step: 10)
+                    Text("Slow").font(.caption2).foregroundStyle(.tertiary)
+                    Text("\(Int(binding.rate))ms")
                         .monospacedDigit()
                         .font(.caption)
-                        .frame(width: 38, alignment: .trailing)
+                        .frame(width: 42, alignment: .trailing)
                 }
             }
         }

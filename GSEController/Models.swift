@@ -1,5 +1,4 @@
 import Foundation
-import os
 
 // rawValues are stable internal keys (case name). Legacy display-string values
 // (e.g. "R1", "A / Cross") are handled by the custom init(from:) below.
@@ -138,8 +137,19 @@ struct MacroBinding: Identifiable, Codable, Equatable {
     var keyCode: UInt16
     var modifier: KeyModifier
     var mode: FireMode
+    /// Interval between key presses in milliseconds. Lower = faster.
     var rate: Double
     var label: String
+
+    static func == (lhs: MacroBinding, rhs: MacroBinding) -> Bool {
+        lhs.button == rhs.button &&
+        lhs.keyName == rhs.keyName &&
+        lhs.keyCode == rhs.keyCode &&
+        lhs.modifier == rhs.modifier &&
+        lhs.mode == rhs.mode &&
+        lhs.rate == rhs.rate &&
+        lhs.label == rhs.label
+    }
 
     init(
         id: UUID = UUID(),
@@ -148,7 +158,7 @@ struct MacroBinding: Identifiable, Codable, Equatable {
         keyCode: UInt16 = 0x28,
         modifier: KeyModifier = .none,
         mode: FireMode = .hold,
-        rate: Double = 10.0,
+        rate: Double = 250.0,
         label: String = ""
     ) {
         self.id = id
@@ -168,8 +178,29 @@ struct ProfileGroup: Identifiable, Codable, Equatable {
     var bindings: [MacroBinding] = []
 
     static let ratePresets: [(label: String, value: Double)] = [
-        ("Slow", 6), ("Standard", 10), ("Fast", 15), ("Very Fast", 20)
+        ("Slow", 340), ("Moderate", 300), ("Standard", 250),
+        ("Fast", 200), ("Very Fast", 150), ("Ultra Fast", 100)
     ]
+
+    var duplicateButtons: Set<ControllerButton> {
+        bindings.duplicateButtons
+    }
+
+    var hasDuplicateButtons: Bool {
+        !duplicateButtons.isEmpty
+    }
+
+    func withFreshIDs(name: String? = nil) -> ProfileGroup {
+        ProfileGroup(
+            id: UUID(),
+            name: name ?? self.name,
+            bindings: bindings.map { binding in
+                var copy = binding
+                copy.id = UUID()
+                return copy
+            }
+        )
+    }
 }
 
 // MARK: - MacroKey
@@ -216,145 +247,15 @@ struct MacroKey: Identifiable, Hashable, Codable {
     }
 }
 
-// MARK: - ProfileStore
-
-@MainActor
-class ProfileStore: ObservableObject {
-    @Published var groups: [ProfileGroup] {
-        didSet { scheduleSave() }
-    }
-    @Published var activeGroupId: UUID? {
-        didSet { scheduleSave() }
-    }
-
-    var activeGroup: ProfileGroup? {
-        groups.first { $0.id == activeGroupId }
-    }
-
-    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.example.gsecontroller", category: "ProfileStore")
-    private let defaults: UserDefaults
-    private var saveTask: Task<Void, Never>?
-
-    convenience init() {
-        self.init(defaults: .standard)
-    }
-
-    init(defaults: UserDefaults) {
-        self.defaults = defaults
-        // Migration from pre-1.x "profiles" UserDefaults key
-        if let oldData = defaults.data(forKey: "profiles"),
-           let oldProfiles = try? JSONDecoder().decode([_LegacyMacroProfile].self, from: oldData) {
-            let migrated = oldProfiles.map { p in
-                ProfileGroup(
-                    id: p.id,
-                    name: p.name,
-                    bindings: [MacroBinding(
-                        button: p.button,
-                        keyName: p.keyName,
-                        keyCode: p.keyCode,
-                        modifier: .none,
-                        mode: .hold,
-                        rate: p.rate
-                    )]
-                )
-            }
-            groups = migrated
-            activeGroupId = migrated.first?.id
-            defaults.removeObject(forKey: "profiles")
-            defaults.removeObject(forKey: "activeProfileId")
-            save()
-        } else {
-            let defaultGroup = ProfileGroup(
-                name: "Guardian Druid",
-                bindings: [MacroBinding(
-                    button: .rightShoulder,
-                    keyName: "K",
-                    keyCode: 0x28,
-                    mode: .hold,
-                    rate: 10
-                )]
-            )
-            if let data = defaults.data(forKey: "groups") {
-                do {
-                    let decoded = try JSONDecoder().decode([ProfileGroup].self, from: data)
-                    groups = decoded
-                    if let idStr = defaults.string(forKey: "activeGroupId"),
-                       let id = UUID(uuidString: idStr),
-                       decoded.contains(where: { $0.id == id }) {
-                        activeGroupId = id
-                    } else {
-                        activeGroupId = decoded.first?.id
-                    }
-                } catch {
-                    // Back up the corrupt data before falling through to the default
-                    // profile so the user's raw JSON can be inspected or recovered.
-                    Self.logger.error("Failed to decode saved groups: \(error.localizedDescription). Backing up to 'groups_backup'.")
-                    defaults.set(data, forKey: "groups_backup")
-                    groups = [defaultGroup]
-                    activeGroupId = defaultGroup.id
-                }
-            } else {
-                groups = [defaultGroup]
-                activeGroupId = defaultGroup.id
+extension Array where Element == MacroBinding {
+    var duplicateButtons: Set<ControllerButton> {
+        var seen = Set<ControllerButton>()
+        var duplicates = Set<ControllerButton>()
+        for binding in self {
+            if !seen.insert(binding.button).inserted {
+                duplicates.insert(binding.button)
             }
         }
+        return duplicates
     }
-
-    private func scheduleSave() {
-        saveTask?.cancel()
-        saveTask = Task { @MainActor [weak self] in
-            do {
-                try await Task.sleep(for: .milliseconds(300))
-                self?.save()
-            } catch is CancellationError {
-            } catch {
-                Self.logger.error("scheduleSave failed: \(error.localizedDescription)")
-            }
-        }
-    }
-
-    private func save() {
-        do {
-            let data = try JSONEncoder().encode(groups)
-            defaults.set(data, forKey: "groups")
-            defaults.set(activeGroupId?.uuidString, forKey: "activeGroupId")
-        } catch {
-            Self.logger.error("Failed to encode groups: \(error.localizedDescription)")
-        }
-    }
-
-    func addGroup(_ group: ProfileGroup) {
-        groups.append(group)
-        activeGroupId = group.id
-    }
-
-    func deleteGroup(_ group: ProfileGroup) {
-        groups.removeAll { $0.id == group.id }
-        if activeGroupId == group.id {
-            activeGroupId = groups.first?.id
-        }
-    }
-
-    // MARK: - Export / Import
-
-    func exportData() throws -> Data {
-        try JSONEncoder().encode(groups)
-    }
-
-    func importData(_ data: Data) throws {
-        let imported = try JSONDecoder().decode([ProfileGroup].self, from: data)
-        guard !imported.isEmpty else { return }
-        groups = imported
-        activeGroupId = imported.first?.id
-    }
-}
-
-// Used only to decode legacy UserDefaults data written by pre-1.x versions.
-struct _LegacyMacroProfile: Codable {
-    var id: UUID
-    var name: String
-    var button: ControllerButton
-    var keyName: String
-    var keyCode: UInt16
-    var rate: Double
 }
