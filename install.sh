@@ -4,6 +4,21 @@ cd "$(dirname "$0")"
 
 ICON_DIR="GSEController/Assets.xcassets/AppIcon.appiconset"
 
+if [ ! -f LocalConfig.xcconfig ]; then
+    if [ -f LocalConfig.xcconfig.template ]; then
+        echo "🧩  Creating LocalConfig.xcconfig from template..."
+        cp LocalConfig.xcconfig.template LocalConfig.xcconfig
+    else
+        echo "🧩  Creating LocalConfig.xcconfig..."
+        cat > LocalConfig.xcconfig << 'EOF'
+// LocalConfig.xcconfig
+// Your personal bundle ID prefix. Change this if you're building a fork.
+BUNDLE_ID_PREFIX = com.example
+PRODUCT_BUNDLE_IDENTIFIER = $(BUNDLE_ID_PREFIX).GSEController
+EOF
+    fi
+fi
+
 if [ ! -f make_icon.swift ]; then
     echo "❌  make_icon.swift not found — cannot generate icon"
     exit 1

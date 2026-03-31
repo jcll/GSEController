@@ -2,7 +2,7 @@
 
 A macOS app that turns your PS5 (or Xbox) controller into a rapid-fire keyboard macro trigger for World of Warcraft — designed for use with [GSE (GnomeSequencer Enhanced)](https://www.curseforge.com/wow/addons/gse-gnome-sequencer-enhanced-advanced-macros).
 
-> **Requires macOS 26 Tahoe (currently in beta).** This app does not run on macOS 15 Sequoia or earlier.
+> **Requires macOS 26 Tahoe and the Xcode 26.4 / Swift 6.3 toolchain.** This app does not run on macOS 15 Sequoia or earlier.
 
 ## Why use a controller?
 
@@ -31,14 +31,14 @@ D-pad buttons add a second layer: hold one and it sends a modifier key (Alt/Shif
 ## Requirements
 
 - macOS 26 Tahoe beta (does not run on macOS 15 Sequoia or earlier)
-- Xcode 26 beta with command-line tools (required to build)
+- Xcode 26.4 with command-line tools (Swift 6.3)
 - A PS5 DualSense or Xbox controller connected via USB or Bluetooth
 - Accessibility permission (to send key events to WoW)
 - World of Warcraft (Retail or Classic) with GSE installed
 
 ## Installation
 
-> **No pre-built binary is available.** The app is unsandboxed and can't be signed for general distribution, so you must build from source. Xcode 26 beta and macOS 26 beta are required.
+> **No pre-built binary is available.** The app is unsandboxed and can't be signed for general distribution, so you must build from source. Xcode 26.4 and macOS 26 are required.
 
 ```bash
 git clone https://github.com/jcll/GSEController.git

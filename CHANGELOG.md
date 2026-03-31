@@ -4,6 +4,33 @@ All notable user-facing changes to GSEController are documented here.
 
 ---
 
+## v1.1.1 — 2026-03-30
+
+### Added
+- `AppModel`, `ProfileStore`, and `KeyInjecting` seams to separate app workflow, profile persistence, and key-delivery concerns.
+- Smoke UI test target for the create/edit/start/switch profile workflow, plus stable accessibility identifiers for the main editor actions.
+
+### Fixed
+- `install.sh` now creates `LocalConfig.xcconfig` automatically on fresh clones, so the documented install path works without manual setup.
+- Start-up now waits for the key helper to be ready before marking a profile active, and pending starts are cancelled cleanly on Stop.
+- Rapid and tap bindings now honor configured modifiers at runtime instead of silently dropping them.
+- Template-based profile creation now regenerates profile/binding UUIDs and auto-selects the newly created profile.
+- Duplicate controller-button assignments are surfaced in the editor, blocked from saving/starting, and no longer fail silently at runtime.
+- Empty profile imports now surface a clear error, and importing over the active profile refreshes the editor draft correctly.
+- Export failures now report as export errors, not import errors.
+- Icon-only toolbar controls now provide explicit accessibility labels.
+
+### Changed
+- Project metadata and docs now target the Xcode 26.4 / Swift 6.3 toolchain while keeping Xcode's `SWIFT_VERSION = 6` language mode.
+- App state now uses Swift Observation for the main workflow, controller, and profile store models, replacing the old manual Combine forwarding layer.
+- The editor and runtime now share a single app-level workflow model, so selection/import/delete flows stop active sessions consistently.
+- Battery fallback polling now runs off the main thread to avoid UI hitches during DualSense reads.
+- The glass shimmer respects Reduce Motion and no longer idles on untinted surfaces.
+- CI now uses `macos-26`, runs the test suite instead of build-only checks, and the test target inherits the base xcconfig so bundle identifiers resolve correctly.
+- Test coverage expanded across helper readiness, duplicate binding validation, modifier delivery, empty import handling, corrupt-data backup recovery, and active-profile preservation.
+
+---
+
 ## v1.1.0 — 2026-03-20
 
 ### Added
