@@ -107,32 +107,42 @@ import Testing
     // TEST-10: Assert each preset label and value against hardcoded expected constants.
     @Test func ratePresetValuesAreCorrect() {
         let values = ProfileGroup.ratePresets.map(\.value)
-        #expect(values == [6, 10, 15, 20])
+        #expect(values == [340, 300, 250, 200, 150, 100])
     }
 
     @Test func ratePresetLabelsAreCorrect() {
         let labels = ProfileGroup.ratePresets.map(\.label)
-        #expect(labels == ["Slow", "Standard", "Fast", "Very Fast"])
+        #expect(labels == ["Slow", "Moderate", "Standard", "Fast", "Very Fast", "Ultra Fast"])
     }
 
     @Test func slowPresetIsCorrect() {
         let preset = ProfileGroup.ratePresets.first { $0.label == "Slow" }
-        #expect(preset?.value == 6)
+        #expect(preset?.value == 340)
+    }
+
+    @Test func moderatePresetIsCorrect() {
+        let preset = ProfileGroup.ratePresets.first { $0.label == "Moderate" }
+        #expect(preset?.value == 300)
     }
 
     @Test func standardPresetIsCorrect() {
         let preset = ProfileGroup.ratePresets.first { $0.label == "Standard" }
-        #expect(preset?.value == 10)
+        #expect(preset?.value == 250)
     }
 
     @Test func fastPresetIsCorrect() {
         let preset = ProfileGroup.ratePresets.first { $0.label == "Fast" }
-        #expect(preset?.value == 15)
+        #expect(preset?.value == 200)
     }
 
     @Test func veryFastPresetIsCorrect() {
         let preset = ProfileGroup.ratePresets.first { $0.label == "Very Fast" }
-        #expect(preset?.value == 20)
+        #expect(preset?.value == 150)
+    }
+
+    @Test func ultraFastPresetIsCorrect() {
+        let preset = ProfileGroup.ratePresets.first { $0.label == "Ultra Fast" }
+        #expect(preset?.value == 100)
     }
 }
 
@@ -152,7 +162,7 @@ import Testing
             keyCode: 0x28,
             modifier: .none,
             mode: .hold,
-            rate: 10
+            rate: 250
         )
         let group = ProfileGroup(name: "Test", bindings: [binding])
         let groups = [group]
@@ -163,14 +173,14 @@ import Testing
         #expect(decoded[0].bindings.count == 1)
         #expect(decoded[0].bindings[0].button == .rightShoulder)
         #expect(decoded[0].bindings[0].mode == .hold)
-        #expect(decoded[0].bindings[0].rate == 10)
+        #expect(decoded[0].bindings[0].rate == 250)
     }
 
     @Test func mixedModeBindingsRoundTrip() throws {
         let bindings: [MacroBinding] = [
-            MacroBinding(button: .rightShoulder, keyName: "K", keyCode: 0x28, modifier: .none, mode: .hold, rate: 10),
-            MacroBinding(button: .leftShoulder, keyName: "1", keyCode: 0x12, modifier: .none, mode: .tap, rate: 10),
-            MacroBinding(button: .rightTrigger, keyName: "Space", keyCode: 0x31, modifier: .alt, mode: .modifierHold, rate: 10),
+            MacroBinding(button: .rightShoulder, keyName: "K", keyCode: 0x28, modifier: .none, mode: .hold, rate: 250),
+            MacroBinding(button: .leftShoulder, keyName: "1", keyCode: 0x12, modifier: .none, mode: .tap, rate: 250),
+            MacroBinding(button: .rightTrigger, keyName: "Space", keyCode: 0x31, modifier: .alt, mode: .modifierHold, rate: 250),
         ]
         let groups = [ProfileGroup(name: "Mixed", bindings: bindings)]
         let encoded = try JSONEncoder().encode(groups)
@@ -203,6 +213,8 @@ import Testing
         #expect(store.groups.count == 1)
         #expect(store.groups[0].name == "Saved")
         #expect(store.activeGroupId == group.id)
+        // rate: 6 (pps) migrates to round(1000/6) = 167ms
+        #expect(store.groups[0].bindings[0].rate == 167)
     }
 
     // TEST-08: Stale activeGroupId references a deleted group — must fall back to groups.first.
@@ -272,6 +284,55 @@ import Testing
     }
 }
 
+// MARK: - ProfileStore Import Recovery
+
+@Suite @MainActor struct ProfileStoreImportRecoveryTests {
+    private func makeTestDefaults() -> (UserDefaults, String) {
+        let suite = "com.test.gsecontroller.\(UUID().uuidString)"
+        return (UserDefaults(suiteName: suite)!, suite)
+    }
+
+    @Test func emptyImportThrowsHelpfulError() throws {
+        let (defaults, suite) = makeTestDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let store = ProfileStore(defaults: defaults)
+        let emptyData = try JSONEncoder().encode([ProfileGroup]())
+
+        #expect(throws: ProfileStoreError.emptyImport) {
+            try store.importData(emptyData)
+        }
+    }
+
+    @Test func corruptStoredGroupsAreBackedUp() {
+        let (defaults, suite) = makeTestDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let corrupt = Data("nope".utf8)
+        defaults.set(corrupt, forKey: "groups")
+
+        _ = ProfileStore(defaults: defaults)
+        #expect(defaults.data(forKey: "groups_backup") == corrupt)
+    }
+
+    @Test func importPreservesActiveGroupWhenSameIDExists() throws {
+        let (defaults, suite) = makeTestDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let sharedID = UUID()
+        let original = ProfileGroup(id: sharedID, name: "Original", bindings: [])
+        let store = ProfileStore(defaults: defaults)
+        store.groups = [original]
+        store.activeGroupId = sharedID
+
+        let replacement = ProfileGroup(id: sharedID, name: "Imported", bindings: [MacroBinding(button: .leftShoulder)])
+        try store.importData(JSONEncoder().encode([replacement]))
+
+        #expect(store.activeGroupId == sharedID)
+        #expect(store.activeGroup?.name == "Imported")
+    }
+}
+
 // MARK: - ProfileStore Migration
 
 @Suite @MainActor struct ProfileStoreMigrationTests {
@@ -300,6 +361,8 @@ import Testing
         #expect(store.groups.count == 1)
         #expect(store.groups[0].name == "Old Profile")
         #expect(store.groups[0].bindings[0].button == .rightShoulder)
+        // rate: 10 (pps) migrates to round(1000/10) = 100ms
+        #expect(store.groups[0].bindings[0].rate == 100)
     }
 
     @Test func legacyKeyIsRemovedAfterMigration() throws {
@@ -394,6 +457,34 @@ import Testing
     }
 }
 
+// MARK: - ProfileGroup Helpers
+
+@Suite struct ProfileGroupHelperTests {
+    @Test func duplicateButtonsDetectsConflicts() {
+        let group = ProfileGroup(name: "Dupes", bindings: [
+            MacroBinding(button: .rightShoulder),
+            MacroBinding(button: .leftShoulder),
+            MacroBinding(button: .rightShoulder),
+        ])
+
+        #expect(group.duplicateButtons == [.rightShoulder])
+        #expect(group.hasDuplicateButtons)
+    }
+
+    @Test func withFreshIDsRegeneratesGroupAndBindingIdentifiers() {
+        let original = ProfileGroup(name: "Template", bindings: [
+            MacroBinding(id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!, button: .rightShoulder),
+            MacroBinding(id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!, button: .leftShoulder),
+        ])
+
+        let cloned = original.withFreshIDs()
+
+        #expect(cloned.id != original.id)
+        #expect(cloned.bindings.map(\.id) != original.bindings.map(\.id))
+        #expect(cloned.bindings.map(\.button) == original.bindings.map(\.button))
+    }
+}
+
 // MARK: - scheduleSave debounce (TEST-10)
 
 @Suite @MainActor struct ScheduleSaveDebounceTests {
@@ -409,12 +500,20 @@ import Testing
         let store = ProfileStore(defaults: defaults)
         store.addGroup(ProfileGroup(name: "Persisted", bindings: []))
 
-        // Wait past the 300ms debounce window
-        try await Task.sleep(for: .milliseconds(500))
-
-        let data = defaults.data(forKey: "groups")
-        #expect(data != nil)
-        let decoded = try JSONDecoder().decode([ProfileGroup].self, from: data!)
+        let data = try await waitForPersistedGroups(in: defaults)
+        let decoded = try JSONDecoder().decode([ProfileGroup].self, from: data)
         #expect(decoded.contains(where: { $0.name == "Persisted" }))
+    }
+
+    private func waitForPersistedGroups(in defaults: UserDefaults) async throws -> Data {
+        let deadline = ContinuousClock.now + .seconds(2)
+        while ContinuousClock.now < deadline {
+            if let data = defaults.data(forKey: "groups") {
+                return data
+            }
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        Issue.record("Timed out waiting for debounced save to persist")
+        throw CancellationError()
     }
 }

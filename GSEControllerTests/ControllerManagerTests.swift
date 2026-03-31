@@ -2,6 +2,36 @@ import Foundation
 import Testing
 @testable import GSEController
 
+private final class DeferredHelperInjector: KeyInjecting, @unchecked Sendable {
+    var isAccessibilityEnabled = true
+    var isHelperAccessibilityEnabled = true
+    private var pendingCompletions: [(@MainActor (Bool) -> Void)] = []
+
+    func ensureHelper(onComplete: (@MainActor (Bool) -> Void)?) {
+        if let onComplete {
+            pendingCompletions.append(onComplete)
+        }
+    }
+
+    func complete(_ ready: Bool) async {
+        let completions = pendingCompletions
+        pendingCompletions.removeAll()
+        for completion in completions {
+            await MainActor.run {
+                completion(ready)
+            }
+        }
+    }
+
+    func pressKey(_ keyCode: UInt16) {}
+    func modifierDown(_ modifier: KeyModifier) {}
+    func modifierUp(_ modifier: KeyModifier) {}
+    func requestAccessibility() {}
+    func openAccessibilitySettings() {}
+    func revealHelperInFinder() {}
+    func stopHelper() {}
+}
+
 // MARK: - isWoW bundle ID matching (TEST-04)
 
 @Suite struct IsWoWTests {
@@ -76,6 +106,72 @@ import Testing
         let manager = ControllerManager(defaults: defaults)
         manager.stop()
         #expect(manager.isRunning == false)
+    }
+
+    @Test func startWaitsForHelperBeforeMarkingRunning() async {
+        let (defaults, suite) = makeTestDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let injector = DeferredHelperInjector()
+        let manager = ControllerManager(
+            defaults: defaults,
+            keyInjector: injector,
+            testState: .init()
+        )
+        let group = ProfileGroup(name: "Ready Check", bindings: [MacroBinding(button: .rightShoulder)])
+        manager.requireWoWFocus = false
+
+        manager.start(group: group)
+
+        #expect(manager.isStarting)
+        #expect(!manager.isRunning)
+
+        await injector.complete(true)
+
+        #expect(!manager.isStarting)
+        #expect(manager.isRunning)
+        #expect(manager.statusMessage == "Active — Ready Check")
+    }
+
+    @Test func stopCancelsPendingStart() async {
+        let (defaults, suite) = makeTestDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let injector = DeferredHelperInjector()
+        let manager = ControllerManager(
+            defaults: defaults,
+            keyInjector: injector,
+            testState: .init()
+        )
+
+        manager.start(group: ProfileGroup(name: "Later", bindings: [MacroBinding(button: .rightShoulder)]))
+        manager.stop()
+        await injector.complete(true)
+
+        #expect(!manager.isRunning)
+        #expect(!manager.isStarting)
+    }
+
+    @Test func duplicateBindingsBlockStart() {
+        let (defaults, suite) = makeTestDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let injector = DeferredHelperInjector()
+        let manager = ControllerManager(
+            defaults: defaults,
+            keyInjector: injector,
+            testState: .init()
+        )
+        let group = ProfileGroup(name: "Dupes", bindings: [
+            MacroBinding(button: .rightShoulder),
+            MacroBinding(button: .rightShoulder, keyName: "1", keyCode: 0x12),
+        ])
+
+        manager.start(group: group)
+
+        #expect(!manager.isRunning)
+        #expect(!manager.isStarting)
+        #expect(manager.statusMessage == "Resolve duplicate button assignments before starting")
     }
 }
 
