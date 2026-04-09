@@ -124,7 +124,7 @@ final class ControllerManager {
         Task { @MainActor [weak self] in
             guard let self else { return }
             self.hasAccessibility = self.keyInjector.isAccessibilityEnabled
-            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+            _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
             self.dualSenseBattery.onUpdate = { [weak self] level, charging in
                 guard let self else { return }
                 self.batteryLevel = level
@@ -274,8 +274,12 @@ final class ControllerManager {
         !charging && level <= 0.20 && !alreadyNotified
     }
 
+    nonisolated static func shouldResetLowBatteryNotification(level: Float, charging: Bool) -> Bool {
+        charging || level > 0.25
+    }
+
     private func checkLowBattery(level: Float, charging: Bool) {
-        if charging || level > 0.20 {
+        if Self.shouldResetLowBatteryNotification(level: level, charging: charging) {
             lowBatteryNotified = false
             return
         }
@@ -375,7 +379,7 @@ final class ControllerManager {
         // Unconditionally release all modifiers — guards against modifier keys
         // getting stuck in WoW if stop() is called while a button is held.
         for modifier in KeyModifier.allCases where modifier != .none {
-            KeySimulator.modifierUp(modifier)
+            keyInjector.modifierUp(modifier)
         }
         isRunning = false
         activeGroupName = nil

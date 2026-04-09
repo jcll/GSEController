@@ -1,10 +1,17 @@
+import Foundation
 import Testing
 @testable import GSEController
 
 private final class MockKeyInjector: KeyInjecting, @unchecked Sendable {
     var isAccessibilityEnabled = true
     var isHelperAccessibilityEnabled = true
-    var events: [String] = []
+    private let lock = NSLock()
+    private var recordedEvents: [String] = []
+    var events: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedEvents
+    }
 
     func ensureHelper(onComplete: (@MainActor (Bool) -> Void)?) {
         if let onComplete {
@@ -13,21 +20,27 @@ private final class MockKeyInjector: KeyInjecting, @unchecked Sendable {
     }
 
     func pressKey(_ keyCode: UInt16) {
-        events.append("press:\(keyCode)")
+        record("press:\(keyCode)")
     }
 
     func modifierDown(_ modifier: KeyModifier) {
-        events.append("down:\(modifier.rawValue)")
+        record("down:\(modifier.rawValue)")
     }
 
     func modifierUp(_ modifier: KeyModifier) {
-        events.append("up:\(modifier.rawValue)")
+        record("up:\(modifier.rawValue)")
     }
 
     func requestAccessibility() {}
     func openAccessibilitySettings() {}
     func revealHelperInFinder() {}
     func stopHelper() {}
+
+    private func record(_ event: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        recordedEvents.append(event)
+    }
 }
 
 // MARK: - Rate Clamping
@@ -57,25 +70,28 @@ private final class MockKeyInjector: KeyInjecting, @unchecked Sendable {
 // MARK: - Timer Lifecycle
 
 @Suite @MainActor struct TimerLifecycleTests {
-    // startFiring creates a DispatchSourceTimer on fireQueue; KeySimulator.pressKey is a
-    // no-op when the helper fd is -1 (not running), so tests are safe without side effects.
+    // startFiring creates a DispatchSourceTimer on fireQueue; use a mock injector
+    // so tests stay isolated from the real key-helper FIFO.
 
     @Test func startFiringSetsIsFiringTrue() {
-        let engine = FireEngine()
+        let engine = FireEngine(keyInjector: MockKeyInjector())
+        engine.requireWoWFocus = false
         engine.startFiring(binding: MacroBinding(button: .rightShoulder))
         #expect(engine.isFiring == true)
         engine.stopAll()
     }
 
     @Test func stopFiringLastButtonSetsIsFiringFalse() {
-        let engine = FireEngine()
+        let engine = FireEngine(keyInjector: MockKeyInjector())
+        engine.requireWoWFocus = false
         engine.startFiring(binding: MacroBinding(button: .rightShoulder))
         engine.stopFiring(button: .rightShoulder)
         #expect(engine.isFiring == false)
     }
 
     @Test func startFiringSameButtonTwiceIsIdempotent() {
-        let engine = FireEngine()
+        let engine = FireEngine(keyInjector: MockKeyInjector())
+        engine.requireWoWFocus = false
         let binding = MacroBinding(button: .rightShoulder)
         engine.startFiring(binding: binding)
         engine.startFiring(binding: binding)
@@ -84,7 +100,8 @@ private final class MockKeyInjector: KeyInjecting, @unchecked Sendable {
     }
 
     @Test func stopFiringOneOfTwoButtonsKeepsIsFiringTrue() {
-        let engine = FireEngine()
+        let engine = FireEngine(keyInjector: MockKeyInjector())
+        engine.requireWoWFocus = false
         engine.startFiring(binding: MacroBinding(button: .rightShoulder))
         engine.startFiring(binding: MacroBinding(button: .leftShoulder))
         engine.stopFiring(button: .rightShoulder)
@@ -93,7 +110,8 @@ private final class MockKeyInjector: KeyInjecting, @unchecked Sendable {
     }
 
     @Test func stopAllSetsIsFiringFalse() {
-        let engine = FireEngine()
+        let engine = FireEngine(keyInjector: MockKeyInjector())
+        engine.requireWoWFocus = false
         engine.startFiring(binding: MacroBinding(button: .rightShoulder))
         engine.startFiring(binding: MacroBinding(button: .leftShoulder))
         engine.stopAll()
@@ -104,37 +122,40 @@ private final class MockKeyInjector: KeyInjecting, @unchecked Sendable {
 // MARK: - Modifier State
 
 @Suite @MainActor struct ModifierStateTests {
-    // Note: modifierDown/Up call KeySimulator.writeCommand which is a no-op when the
-    // helper is not running (fd == -1, guard fd >= 0 exits early). Tests are safe.
+    // Use a mock injector so modifier state tests stay isolated from the real helper.
 
     @Test func modifierDownAddsToSet() {
-        let engine = FireEngine()
+        let engine = FireEngine(keyInjector: MockKeyInjector())
+        engine.requireWoWFocus = false
         engine.modifierDown(.alt)
         #expect(engine.heldModifiers.contains(.alt))
     }
 
     @Test func modifierUpRemovesFromSet() {
-        let engine = FireEngine()
+        let engine = FireEngine(keyInjector: MockKeyInjector())
+        engine.requireWoWFocus = false
         engine.modifierDown(.alt)
         engine.modifierUp(.alt)
         #expect(!engine.heldModifiers.contains(.alt))
     }
 
     @Test func modifierDownTwiceDoesNotDuplicate() {
-        let engine = FireEngine()
+        let engine = FireEngine(keyInjector: MockKeyInjector())
+        engine.requireWoWFocus = false
         engine.modifierDown(.alt)
         engine.modifierDown(.alt)
         #expect(engine.heldModifiers.count == 1)
     }
 
     @Test func modifierDownNoneIsNoOp() {
-        let engine = FireEngine()
+        let engine = FireEngine(keyInjector: MockKeyInjector())
         engine.modifierDown(.none)
         #expect(engine.heldModifiers.isEmpty)
     }
 
     @Test func stopAllClearsModifiers() {
-        let engine = FireEngine()
+        let engine = FireEngine(keyInjector: MockKeyInjector())
+        engine.requireWoWFocus = false
         engine.modifierDown(.alt)
         engine.modifierDown(.shift)
         engine.stopAll()
@@ -144,6 +165,7 @@ private final class MockKeyInjector: KeyInjecting, @unchecked Sendable {
     @Test func rapidBindingModifierHeldUntilStop() {
         let injector = MockKeyInjector()
         let engine = FireEngine(keyInjector: injector)
+        engine.requireWoWFocus = false
         engine.startFiring(binding: MacroBinding(button: .rightShoulder, modifier: .alt, mode: .hold))
 
         #expect(engine.heldModifiers.contains(.alt))
@@ -157,9 +179,88 @@ private final class MockKeyInjector: KeyInjecting, @unchecked Sendable {
     @Test func tapBindingAppliesModifierAroundPress() {
         let injector = MockKeyInjector()
         let engine = FireEngine(keyInjector: injector)
+        engine.requireWoWFocus = false
         engine.tap(binding: MacroBinding(button: .rightShoulder, keyCode: 0x28, modifier: .shift, mode: .tap))
 
         #expect(injector.events == ["down:shift", "press:40", "up:shift"])
+    }
+}
+
+// MARK: - Focus Guard
+
+@Suite @MainActor struct FocusGuardTests {
+    @Test func tapBindingDoesNotFireWhenWoWFocusIsRequiredAndInactive() {
+        let injector = MockKeyInjector()
+        let engine = FireEngine(keyInjector: injector)
+        engine.requireWoWFocus = true
+        engine.wowIsActive = false
+
+        engine.tap(binding: MacroBinding(button: .rightShoulder, keyCode: 0x28, modifier: .shift, mode: .tap))
+
+        #expect(injector.events.isEmpty)
+        #expect(engine.heldModifiers.isEmpty)
+    }
+
+    @Test func tapBindingFiresWhenWoWFocusIsRequiredAndActive() {
+        let injector = MockKeyInjector()
+        let engine = FireEngine(keyInjector: injector)
+        engine.requireWoWFocus = true
+        engine.wowIsActive = true
+
+        engine.tap(binding: MacroBinding(button: .rightShoulder, keyCode: 0x28, modifier: .shift, mode: .tap))
+
+        #expect(injector.events == ["down:shift", "press:40", "up:shift"])
+    }
+
+    @Test func modifierHoldDoesNotPressWhenWoWFocusIsRequiredAndInactive() {
+        let injector = MockKeyInjector()
+        let engine = FireEngine(keyInjector: injector)
+        engine.requireWoWFocus = true
+        engine.wowIsActive = false
+
+        engine.modifierDown(.alt)
+
+        #expect(injector.events.isEmpty)
+        #expect(engine.heldModifiers.isEmpty)
+    }
+
+    @Test func rapidBindingDoesNotStartWhenWoWFocusIsRequiredAndInactive() {
+        let injector = MockKeyInjector()
+        let engine = FireEngine(keyInjector: injector)
+        engine.requireWoWFocus = true
+        engine.wowIsActive = false
+
+        engine.startFiring(binding: MacroBinding(button: .rightShoulder, keyCode: 0x28, modifier: .shift, mode: .hold))
+
+        #expect(!engine.isFiring)
+        #expect(injector.events.isEmpty)
+        #expect(engine.heldModifiers.isEmpty)
+    }
+
+    @Test func focusLossReleasesHeldModifiers() {
+        let injector = MockKeyInjector()
+        let engine = FireEngine(keyInjector: injector)
+        engine.requireWoWFocus = false
+        engine.modifierDown(.alt)
+
+        engine.requireWoWFocus = true
+        engine.wowIsActive = false
+
+        #expect(injector.events == ["down:alt", "up:alt"])
+        #expect(engine.heldModifiers.isEmpty)
+    }
+
+    @Test func accessibilityRevocationBlocksImmediateTap() {
+        let injector = MockKeyInjector()
+        injector.isAccessibilityEnabled = false
+        let engine = FireEngine(keyInjector: injector)
+        var revoked = false
+        engine.onAccessibilityRevoked = { revoked = true }
+
+        engine.tap(binding: MacroBinding(button: .rightShoulder, keyCode: 0x28, mode: .tap))
+
+        #expect(injector.events.isEmpty)
+        #expect(revoked)
     }
 }
 

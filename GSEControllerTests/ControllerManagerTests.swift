@@ -5,6 +5,7 @@ import Testing
 private final class DeferredHelperInjector: KeyInjecting, @unchecked Sendable {
     var isAccessibilityEnabled = true
     var isHelperAccessibilityEnabled = true
+    var events: [String] = []
     private var pendingCompletions: [(@MainActor (Bool) -> Void)] = []
 
     func ensureHelper(onComplete: (@MainActor (Bool) -> Void)?) {
@@ -23,9 +24,9 @@ private final class DeferredHelperInjector: KeyInjecting, @unchecked Sendable {
         }
     }
 
-    func pressKey(_ keyCode: UInt16) {}
-    func modifierDown(_ modifier: KeyModifier) {}
-    func modifierUp(_ modifier: KeyModifier) {}
+    func pressKey(_ keyCode: UInt16) { events.append("press:\(keyCode)") }
+    func modifierDown(_ modifier: KeyModifier) { events.append("down:\(modifier.rawValue)") }
+    func modifierUp(_ modifier: KeyModifier) { events.append("up:\(modifier.rawValue)") }
     func requestAccessibility() {}
     func openAccessibilitySettings() {}
     func revealHelperInFinder() {}
@@ -173,6 +174,22 @@ private final class DeferredHelperInjector: KeyInjecting, @unchecked Sendable {
         #expect(!manager.isStarting)
         #expect(manager.statusMessage == "Resolve duplicate button assignments before starting")
     }
+
+    @Test func stopReleasesModifiersThroughInjectedKeyInjector() {
+        let (defaults, suite) = makeTestDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let injector = DeferredHelperInjector()
+        let manager = ControllerManager(
+            defaults: defaults,
+            keyInjector: injector,
+            testState: .init()
+        )
+
+        manager.stop()
+
+        #expect(injector.events == ["up:alt", "up:shift", "up:ctrl"])
+    }
 }
 
 // MARK: - Low Battery Threshold (TEST-09)
@@ -200,6 +217,22 @@ private final class DeferredHelperInjector: KeyInjecting, @unchecked Sendable {
 
     @Test func justAboveThresholdShouldNotNotify() {
         #expect(!ControllerManager.shouldNotifyLowBattery(level: 0.21, charging: false, alreadyNotified: false))
+    }
+
+    @Test func chargingShouldResetNotificationLatch() {
+        #expect(ControllerManager.shouldResetLowBatteryNotification(level: 0.10, charging: true))
+    }
+
+    @Test func aboveHysteresisThresholdShouldResetNotificationLatch() {
+        #expect(ControllerManager.shouldResetLowBatteryNotification(level: 0.26, charging: false))
+    }
+
+    @Test func betweenAlertAndHysteresisThresholdShouldNotResetNotificationLatch() {
+        #expect(!ControllerManager.shouldResetLowBatteryNotification(level: 0.21, charging: false))
+    }
+
+    @Test func exactlyAtHysteresisThresholdShouldNotResetNotificationLatch() {
+        #expect(!ControllerManager.shouldResetLowBatteryNotification(level: 0.25, charging: false))
     }
 }
 

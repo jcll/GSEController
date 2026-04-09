@@ -13,17 +13,17 @@ With GSEController, you hold a trigger button and the app fires your macro key a
 D-pad buttons add a second layer: hold one and it sends a modifier key (Alt/Shift/Ctrl) to WoW, which activates a conditional branch in your GSE sequence — letting you inject an interrupt, a defensive, or a proc ability mid-rotation without breaking the loop.
 
 <p align="center"><img src="screenshot.png" width="500"></p>
-<p align="center"><em>Profile editor showing a Guardian Druid setup — R1 on Rapid at 10x/s, D-pad modifier bindings shown in the controller map.</em></p>
+<p align="center"><em>Profile editor showing a Guardian Druid setup — an R1 Rapid binding with D-pad modifier bindings shown in the controller map.</em></p>
 
 ## Features
 
-- **Multiple profiles** — one per class/spec, switch from the toolbar
+- **Multiple profiles** — one per class/spec, switch from the sidebar
 - **Per-button configuration** — assign any controller button to any key, with any fire mode
 - **Three fire modes:**
   - **Rapid** — spams the key while held (for GSE rotation macros)
   - **Tap** — fires once per press (for manual cooldowns)
   - **Modifier** — holds Alt/Shift/Ctrl while pressed (activates conditional branches in your GSE sequence)
-- **Configurable rate** — 6/10/15/20 presses per second, or custom
+- **Configurable rate** — preset millisecond delays from 340 ms to 100 ms, or a custom slider
 - **Controller map** — visual overview of all your bindings at a glance
 - **WoW focus guard** — optionally only fires when WoW is the active window
 - **Profile templates** — pre-built starting points for common specs and roles
@@ -57,7 +57,7 @@ On first launch, macOS will ask for Accessibility permission — this is require
 1. Launch GSEController and connect your controller
 2. Click **+** and pick a profile template for your role, or start blank
 3. For each binding, set the button, fire mode, and key to match your GSE macro keybind
-4. Set the fire rate — **10 pps (100 ms)** is a safe default for most GSE sequences. If your GSE macro has a custom `ms` setting, match the rate: `pps = 1000 ÷ ms`
+4. Set the fire rate — **250 ms** is the conservative default, and **100 ms** is available for faster sequences. If your GSE macro has a custom `ms` setting, match that value.
 5. Click **Save**, then click **Start**
 
 ### In WoW
@@ -73,12 +73,12 @@ All templates default to key **K** — change it to match your actual GSE keybin
 
 | Template | R1 | R2 | D↓ (Alt) | D← (Shift) | D→ (Ctrl) |
 |---|---|---|---|---|---|
-| Guardian Druid | Rapid 10pps | Rapid 10pps | Frenzied Regen | Incapacitating Roar | Rebirth |
-| Generic Tank | Rapid 10pps | Rapid 10pps | Defensive CD | CC / Utility | Taunt / Off-GCD |
-| Melee DPS | Rapid 10pps | Rapid 10pps | Defensive CD | Interrupt | Major DPS CD |
-| Ranged / Caster | Rapid 10pps | Rapid 12pps | Defensive CD | Interrupt / Kick | Major DPS CD |
-| Healer | Rapid 10pps | — | Major CD | Dispel / Utility | Raid CD |
-| Simple — R1 Only | Rapid 10pps | — | — | — | — |
+| Guardian Druid | Rapid 250ms | Rapid 250ms | Frenzied Regen | Incapacitating Roar | Rebirth |
+| Generic Tank | Rapid 250ms | Rapid 250ms | Defensive CD | CC / Utility | Taunt / Off-GCD |
+| Melee DPS | Rapid 250ms | Rapid 250ms | Defensive CD | Interrupt | Major DPS CD |
+| Ranged / Caster | Rapid 250ms | Rapid 100ms | Defensive CD | Interrupt / Kick | Major DPS CD |
+| Healer | Rapid 250ms | — | Major CD | Dispel / Utility | Raid CD |
+| Simple — R1 Only | Rapid 250ms | — | — | — | — |
 
 D-pad buttons use Modifier Hold mode in all templates — holding the button sends that modifier key to WoW. Any button can use any fire mode; D-pad for modifiers is just a convention.
 
@@ -110,7 +110,7 @@ GSEController has an unusual architecture that security-conscious users should u
 
 - **Runtime C compilation:** On first launch, the app compiles a small C program (`KeyHelper`) using `/usr/bin/cc` and stores the binary at `~/Library/Application Support/GSEController/keyhelper`. The source is embedded in `KeySimulator.swift` — you can audit it before building.
 
-- **Persistent launchd agent:** The helper is registered as a launchd user agent (`com.jcll.GSEController.helper`) that starts at login and stays running in the background. It receives key events from the main app via a FIFO and posts them via `CGEventPost`. When no controller is connected and the main app is not running, it is dormant.
+- **Persistent launchd agent:** The helper is registered as a launchd user agent derived from your bundle identifier, for example `com.example.GSEController.helper` with the default local config. It starts at login and stays running in the background. It receives key events from the main app via a FIFO and posts them via `CGEventPost`. When no controller is connected and the main app is not running, it is dormant.
 
 - **Accessibility permission:** The helper binary (not the main app) holds the Accessibility permission used to send keystrokes. This is standard practice for apps that need to send events to other applications.
 
@@ -122,8 +122,9 @@ To fully remove GSEController:
 
 ```bash
 # Unload and remove the launchd agent
-launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.jcll.GSEController.helper.plist
-rm ~/Library/LaunchAgents/com.jcll.GSEController.helper.plist
+HELPER_LABEL="com.example.GSEController.helper"
+launchctl bootout gui/$(id -u) "$HOME/Library/LaunchAgents/$HELPER_LABEL.plist"
+rm "$HOME/Library/LaunchAgents/$HELPER_LABEL.plist"
 
 # Remove the app and support files
 rm -rf /Applications/GSEController.app
@@ -145,7 +146,7 @@ xcodebuild -project GSEController.xcodeproj -scheme GSEController -destination '
 xcodebuild test -project GSEController.xcodeproj -scheme GSEController -destination 'platform=macOS,arch=arm64'
 ```
 
-98 unit tests across 5 test suites covering `Models`, `ControllerManager`, `FireEngine`, `KeySimulator`, and `DualSenseBatteryMonitor`. No mocking infrastructure — tests run entirely in-process via `TEST_HOST`/`BUNDLE_LOADER`.
+139 Swift Testing checks across 24 suites cover `Models`, `ControllerManager`, `FireEngine`, `KeySimulator`, and `DualSenseBatteryMonitor`. Focused injected test doubles keep helper-dependent tests in-process via `TEST_HOST`/`BUNDLE_LOADER`.
 
 ## License
 

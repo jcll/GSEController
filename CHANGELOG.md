@@ -4,6 +4,22 @@ All notable user-facing changes to GSEController are documented here.
 
 ---
 
+## v1.1.2 — 2026-04-09
+
+### Fixed
+- The WoW focus guard now blocks Tap and Modifier bindings as well as Rapid bindings, preventing accidental key or modifier output outside WoW.
+- Held modifiers are now released when WoW loses focus while the focus guard is enabled, preventing stuck modifier keys after app switches.
+- `ControllerManager.stop()` now routes its final modifier-release safety pass through the injected key-delivery interface instead of bypassing it.
+- Low-battery notification hysteresis now resets only above 25% or while charging, matching the documented alert behavior.
+- DualSense battery fallback reads are now explicitly nonisolated, clearing the Swift actor-isolation build warning for the background HID polling path.
+- README profile and rate documentation now matches the current sidebar UI, millisecond presets, and templates.
+- README helper-agent and uninstall documentation now reflects the bundle-identifier-derived launchd label instead of the old hardcoded label.
+
+### Changed
+- Added regression tests for focus-guard behavior across Tap, Modifier Hold, Rapid, accessibility revocation, and Stop-time modifier release.
+
+---
+
 ## v1.1.1 — 2026-03-30
 
 ### Added

@@ -17,7 +17,12 @@ class FireEngine: ObservableObject {
     private let _wowIsActive = OSAllocatedUnfairLock<Bool>(initialState: false)
     var wowIsActive: Bool {
         get { _wowIsActive.withLock { $0 } }
-        set { _wowIsActive.withLock { $0 = newValue } }
+        set {
+            _wowIsActive.withLock { $0 = newValue }
+            if requireWoWFocus && !newValue {
+                stopAll()
+            }
+        }
     }
 
     var onAccessibilityRevoked: (() -> Void)?
@@ -57,6 +62,7 @@ class FireEngine: ObservableObject {
 
     func startFiring(binding: MacroBinding) {
         guard activeTimers[binding.button] == nil else { return }
+        guard canSendImmediateInput() else { return }
         let injector = keyInjector
 
         // Start the @MainActor AX monitor if it isn't already running.
@@ -164,6 +170,7 @@ class FireEngine: ObservableObject {
 
     func modifierDown(_ modifier: KeyModifier) {
         guard modifier != .none else { return }
+        guard canSendImmediateInput() else { return }
         holdModifierIfNeeded(modifier)
     }
 
@@ -173,9 +180,21 @@ class FireEngine: ObservableObject {
     }
 
     func tap(binding: MacroBinding) {
+        guard canSendImmediateInput() else { return }
         holdModifierIfNeeded(binding.modifier)
         keyInjector.pressKey(binding.keyCode)
         releaseModifierIfNeeded(binding.modifier)
+    }
+
+    private func canSendImmediateInput() -> Bool {
+        let axEnabled = keyInjector.isAccessibilityEnabled
+        _axEnabled.withLock { $0 = axEnabled }
+        guard axEnabled else {
+            stopAll()
+            onAccessibilityRevoked?()
+            return false
+        }
+        return !requireWoWFocus || wowIsActive
     }
 
     private func holdModifierIfNeeded(_ modifier: KeyModifier) {

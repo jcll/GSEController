@@ -21,18 +21,18 @@ import os
 ///   BT   (report ID 0x31): data[54]   — 1 BT header byte precedes the common struct
 @MainActor
 final class DualSenseBatteryMonitor {
-    private static let logger = Logger(
+    private nonisolated static let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "com.gsecontroller",
         category: "DualSenseBattery"
     )
 
-    private static let sonyVendorID: Int = 0x054C
-    private static let productIDs: Set<Int> = [0x0CE6, 0x0DF2] // DualSense, DualSense Edge
+    private nonisolated static let sonyVendorID: Int = 0x054C
+    private nonisolated static let productIDs: Set<Int> = [0x0CE6, 0x0DF2] // DualSense, DualSense Edge
 
-    private static let usbReportID: UInt32 = 0x01
-    private static let btReportID:  UInt32 = 0x31
-    private static let usbStatusOffset = 53
-    private static let btStatusOffset  = 54
+    private nonisolated static let usbReportID: UInt32 = 0x01
+    private nonisolated static let btReportID:  UInt32 = 0x31
+    private nonisolated static let usbStatusOffset = 53
+    private nonisolated static let btStatusOffset  = 54
     private struct SendableDevice: @unchecked Sendable {
         let value: IOHIDDevice
     }
@@ -180,7 +180,7 @@ final class DualSenseBatteryMonitor {
         }
     }
 
-    private static func readBattery(_ dev: IOHIDDevice) -> (level: Float, charging: Bool)? {
+    private nonisolated static func readBattery(_ dev: IOHIDDevice) -> (level: Float, charging: Bool)? {
         var propertyPct: Float? = nil
         if let raw = IOHIDDeviceGetProperty(dev, "BatteryLevel" as CFString) as? NSNumber {
             let pct = raw.floatValue / 100.0
