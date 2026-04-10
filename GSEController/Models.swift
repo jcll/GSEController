@@ -2,6 +2,8 @@ import Foundation
 
 // rawValues are stable internal keys (case name). Legacy display-string values
 // (e.g. "R1", "A / Cross") are handled by the custom init(from:) below.
+// These models are the shared vocabulary for persistence, UI editing, and the
+// runtime controller engine, so they avoid AppKit/GameController dependencies.
 enum ControllerButton: String, CaseIterable, Identifiable {
     case rightShoulder
     case leftShoulder
@@ -130,6 +132,9 @@ enum FireMode: String, Codable {
     case modifierHold // holds a modifier key down while button held
 }
 
+// A single persisted controller binding. The model stores both keyName and
+// keyCode so the editor can stay human-readable while runtime delivery stays
+// lossless.
 struct MacroBinding: Identifiable, Codable, Equatable {
     var id: UUID = UUID()
     var button: ControllerButton
@@ -173,6 +178,7 @@ struct MacroBinding: Identifiable, Codable, Equatable {
 }
 
 struct ProfileGroup: Identifiable, Codable, Equatable {
+    // A profile is the unit users edit, save, export, import, and start.
     var id: UUID = UUID()
     var name: String
     var bindings: [MacroBinding] = []
@@ -239,6 +245,7 @@ extension ProfileGroup {
 
 // MARK: - MacroKey
 
+// Lookup table of keyboard targets the app exposes in the editor.
 struct MacroKey: Identifiable, Hashable, Codable {
     let name: String
     let keyCode: UInt16

@@ -2,6 +2,9 @@ import SwiftUI
 import Observation
 import AppKit
 
+// Single-window root view. It owns transient navigation, sheet, and unsaved
+// draft state, while delegating persistence and controller side effects to
+// AppModel and ControllerManager.
 struct ContentView: View {
     @State private var model = AppModel()
     @State private var showingCPInfo = false
@@ -23,6 +26,8 @@ struct ContentView: View {
     }
 
     private enum PendingUnsavedAction {
+        // Actions that can discard or overwrite the local editor draft are
+        // routed through a single confirmation flow.
         case select(UUID?)
         case showNewGroup
         case delete(ProfileGroup)
@@ -397,14 +402,15 @@ struct ContentView: View {
             permissionRow(
                 granted: controller.hasHelperAccessibility,
                 label: "Step 1 — Key Helper binary",
-                detail: "Sends keystrokes to WoW. Open Accessibility settings, then drag the helper in.",
+                detail: "Sends keystrokes to WoW. Trigger the helper prompt, then approve the helper binary if macOS asks.",
                 actions: {
-                    Button("Open Settings") {
-                        controller.openHelperAccessibilitySettings()
+                    Button("Grant Access") {
+                        controller.checkAccessibility()
+                        controller.requestHelperAccessibilityPermission()
                     }
                     .buttonStyle(.glass)
                     .controlSize(.small)
-                    .accessibilityLabel("Open Settings for Key Helper")
+                    .accessibilityLabel("Grant Key Helper Accessibility access")
                 }
             )
 
@@ -701,6 +707,8 @@ struct ContentView: View {
             !controller.isConnected ||
             store.activeGroup?.bindings.isEmpty == true ||
             store.activeGroup?.hasDuplicateButtons == true ||
+            !controller.hasHelperAccessibility ||
+            !controller.hasAccessibility ||
             !controller.helperReady
         )
         .help({
@@ -708,6 +716,8 @@ struct ContentView: View {
             if !controller.isConnected { return "Connect a controller to start" }
             if store.activeGroup?.bindings.isEmpty == true { return "Add at least one binding to start" }
             if store.activeGroup?.hasDuplicateButtons == true { return "Each controller button can only be assigned once" }
+            if !controller.hasHelperAccessibility { return "Grant Key Helper Accessibility access before starting" }
+            if !controller.hasAccessibility { return "Grant GSEController Accessibility access before starting" }
             if !controller.helperReady {
                 return controller.helperSetupFailed
                     ? "Key helper failed to compile — see banner above"
@@ -728,6 +738,10 @@ struct ContentView: View {
                     Text("Add at least one binding to start")
                 } else if store.activeGroup?.hasDuplicateButtons == true {
                     Text("Each controller button can only be assigned once")
+                } else if !controller.hasHelperAccessibility {
+                    Text("Grant Key Helper Accessibility access before starting")
+                } else if !controller.hasAccessibility {
+                    Text("Grant GSEController Accessibility access before starting")
                 } else if !controller.helperReady {
                     Text(controller.helperSetupFailed ? "Key helper failed — see banner above" : "Preparing key helper…")
                 }
@@ -765,8 +779,9 @@ struct ContentView: View {
                 .font(.caption)
 
                 HStack {
-                    Button("Open Settings") {
-                        controller.openHelperAccessibilitySettings()
+                    Button("Grant Helper Access") {
+                        controller.checkAccessibility()
+                        controller.requestHelperAccessibilityPermission()
                     }
                     .buttonStyle(.glass)
 
@@ -828,6 +843,8 @@ struct ContentView: View {
              controller.isConnected &&
              store.activeGroup?.bindings.isEmpty == false &&
              store.activeGroup?.hasDuplicateButtons == false &&
+             controller.hasHelperAccessibility &&
+             controller.hasAccessibility &&
              controller.helperReady)
     }
 
@@ -907,6 +924,8 @@ struct ContentView: View {
     }
 
     private func performAction(_ action: PendingUnsavedAction) {
+        // Centralizing these mutations keeps the "stop first, then mutate
+        // selection/store/UI state" rules in one place.
         switch action {
         case .select(let id):
             model.selectGroup(id)

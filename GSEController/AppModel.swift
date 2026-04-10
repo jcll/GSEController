@@ -3,12 +3,17 @@ import Observation
 import SwiftUI
 import UniformTypeIdentifiers
 
+// Lightweight alert payload used by ContentView so AppModel can surface
+// user-facing failures without depending on view presentation details.
 struct AppAlertContext: Identifiable {
     let id = UUID()
     let title: String
     let message: String
 }
 
+// Captures the file chosen for import plus a preview of what will change.
+// ContentView uses this to gate destructive replace/merge imports behind a
+// second confirmation step instead of mutating the store immediately.
 struct ProfileImportPreview: Identifiable {
     let id = UUID()
     let mode: ProfileImportMode
@@ -32,6 +37,9 @@ struct ProfileImportPreview: Identifiable {
 @MainActor
 @Observable
 final class AppModel {
+    // AppModel is the application-level coordinator. It owns the persistent
+    // profile store and the live controller runtime, and keeps AppKit panels,
+    // import/export flows, and stop-before-mutate rules out of the view layer.
     private(set) var store: ProfileStore
     private(set) var controller: ControllerManager
     var activeAlert: AppAlertContext?

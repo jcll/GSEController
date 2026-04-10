@@ -2,6 +2,9 @@ import SwiftUI
 
 @main
 struct GSEControllerApp: App {
+    // Entry point for the macOS app and command menu wiring. The SIGTERM hook
+    // is kept here so graceful termination can release held modifiers even
+    // when the quit request comes from launchd or Activity Monitor.
     init() {
         // Intercept SIGTERM so a graceful shutdown (launchd, Activity Monitor "Quit")
         // releases any held modifier keys via the FIFO before the process exits.

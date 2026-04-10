@@ -1,6 +1,8 @@
 #!/usr/bin/env swift
 import AppKit
 
+// Deterministically generates the full macOS icon set from code so the repo
+// can treat the app icon as buildable source rather than a hand-edited asset.
 let outDir = CommandLine.arguments.dropFirst().first ?? FileManager.default.currentDirectoryPath
 
 func renderIcon(pixels: Int) -> Data {

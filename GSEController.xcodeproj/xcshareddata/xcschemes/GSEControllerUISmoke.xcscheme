@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Default developer/test scheme: app target plus non-UI tests only. -->
+<!-- Opt-in UI smoke scheme: app target plus GSEControllerUITests only. -->
 <Scheme
    LastUpgradeVersion = "2640"
    version = "1.7">
@@ -29,9 +29,9 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "T50000000000000000000001"
-               BuildableName = "GSEControllerTests.xctest"
-               BlueprintName = "GSEControllerTests"
+               BlueprintIdentifier = "U50000000000000000000001"
+               BuildableName = "GSEControllerUITests.xctest"
+               BlueprintName = "GSEControllerUITests"
                ReferencedContainer = "container:GSEController.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -47,9 +47,9 @@
             skipped = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "T50000000000000000000001"
-               BuildableName = "GSEControllerTests.xctest"
-               BlueprintName = "GSEControllerTests"
+               BlueprintIdentifier = "U50000000000000000000001"
+               BuildableName = "GSEControllerUITests.xctest"
+               BlueprintName = "GSEControllerUITests"
                ReferencedContainer = "container:GSEController.xcodeproj">
             </BuildableReference>
          </TestableReference>

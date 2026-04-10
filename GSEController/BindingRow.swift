@@ -3,6 +3,9 @@ import AppKit
 
 // MARK: - Binding Row
 
+// Editor for a single MacroBinding inside the profile form. The view owns UI
+// normalization rules such as "D-pad bindings are modifier-hold only" so the
+// persisted model stays valid no matter which control path changed the draft.
 struct BindingRow: View {
     @Binding var binding: MacroBinding
     let usedButtons: Set<ControllerButton>
@@ -314,11 +317,15 @@ private struct RateTextField: NSViewRepresentable {
         }
 
         private func updateRate(from string: String) {
+            // Live updates stay inside the valid range so the summary text and
+            // slider remain stable while the user is typing.
             guard let value = Double(string), (33...1000).contains(value) else { return }
             parent.rate = value.rounded()
         }
 
         private func commit(_ field: NSTextField) {
+            // End-editing is the only place we clamp invalid or partial text
+            // back into the persisted range.
             guard let value = Double(field.stringValue) else {
                 field.stringValue = "\(Int(parent.rate))"
                 return

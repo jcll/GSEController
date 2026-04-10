@@ -2,6 +2,9 @@ import Foundation
 import Testing
 @testable import GSEController
 
+// FireEngine tests stay in-process by substituting a recording injector for the
+// real helper/FIFO path. That keeps timer, focus, and modifier behavior fast
+// and deterministic.
 private final class MockKeyInjector: KeyInjecting, @unchecked Sendable {
     var isAccessibilityEnabled = true
     var isHelperAccessibilityEnabled = true
@@ -44,6 +47,7 @@ private final class MockKeyInjector: KeyInjecting, @unchecked Sendable {
     }
 
     func requestAccessibility() {}
+    func requestHelperAccessibility() {}
     func openAccessibilitySettings() {}
     func revealHelperInFinder() {}
     func stopHelper() {}

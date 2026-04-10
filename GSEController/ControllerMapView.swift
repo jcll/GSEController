@@ -2,6 +2,9 @@ import SwiftUI
 
 // MARK: - Controller Map View
 
+// Compact visual summary of the current bindings. This is intentionally read-
+// only and lossless enough to answer "what does each button do?" at a glance
+// while editing a profile.
 struct ControllerMapView: View {
     let bindings: [MacroBinding]
 

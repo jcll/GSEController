@@ -1,6 +1,9 @@
 import Testing
 @testable import GSEController
 
+// KeySimulator unit tests intentionally stop at pure encoding/no-helper paths.
+// Helper compilation, launchd, and TCC behavior are exercised through higher-
+// level runtime tests and manual verification.
 @Suite struct CommandEncodingTests {
     @Test func pressReleaseTypeByteIsZero() {
         let result = KeySimulator.encodeCommand(type: 0, keyCode: 0)

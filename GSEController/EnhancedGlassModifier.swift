@@ -1,5 +1,8 @@
 import SwiftUI
 
+// Local style buckets for the custom glass treatment. The app uses three
+// levels so shared controls read consistently without every call site having
+// to tune shadows, tint intensity, and shimmer behavior manually.
 enum EnhancedGlassStyle {
     case primary
     case status
@@ -7,6 +10,9 @@ enum EnhancedGlassStyle {
 }
 
 // Re-evaluate after macOS 26.1 — glass material may gain native depth cues
+// This modifier exists because the stock Tahoe glass treatment was too flat in
+// this app's dense editor. It adds a small amount of stable depth, tint wash,
+// and optional shimmer without changing layout.
 struct EnhancedGlassModifier: ViewModifier {
     var cornerRadius: CGFloat
     var tintColor: Color?

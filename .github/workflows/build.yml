@@ -1,3 +1,6 @@
+# Default CI lane: repository hygiene, non-UI tests, and a release build.
+# UI smoke coverage lives in the separate path-gated workflow so ordinary model
+# or runtime changes do not pay the full XCUI cost.
 name: Build
 
 on:
@@ -66,7 +69,6 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/GSEControllerDerivedData" \
             -resultBundlePath "$RUNNER_TEMP/GSEController-UnitTests.xcresult" \
             test \
-            -skip-testing:GSEControllerUITests \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO
@@ -77,43 +79,6 @@ jobs:
         with:
           name: GSEController-UnitTests-xcresult
           path: ${{ runner.temp }}/GSEController-UnitTests.xcresult
-          if-no-files-found: ignore
-
-  ui-tests:
-    runs-on: macos-26
-    timeout-minutes: 35
-    needs: hygiene
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Create LocalConfig.xcconfig
-        run: |
-          cat > LocalConfig.xcconfig << 'EOF'
-          BUNDLE_ID_PREFIX = com.example
-          PRODUCT_BUNDLE_IDENTIFIER = $(BUNDLE_ID_PREFIX).GSEController
-          EOF
-
-      - name: Run UI tests
-        run: |
-          xcodebuild \
-            -project "$XCODE_PROJECT" \
-            -scheme "$XCODE_SCHEME" \
-            -configuration Debug \
-            -destination "$XCODE_DESTINATION" \
-            -derivedDataPath "$RUNNER_TEMP/GSEControllerDerivedData" \
-            -resultBundlePath "$RUNNER_TEMP/GSEController-UITests.xcresult" \
-            test \
-            -only-testing:GSEControllerUITests \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
-
-      - name: Upload UI test result bundle
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: GSEController-UITests-xcresult
-          path: ${{ runner.temp }}/GSEController-UITests.xcresult
           if-no-files-found: ignore
 
   release-build:

@@ -137,6 +137,21 @@ rm -rf ~/Library/Logs/GSEController
 
 ## Development
 
+### Architecture
+
+The codebase is split into a small set of layers with deliberately different jobs:
+
+- `AppModel.swift` coordinates app-level actions such as import/export, alerts, and stop-before-mutate flows.
+- `ProfileStore.swift` owns persistence, migrations, and profile import/export semantics.
+- `ControllerManager.swift` bridges GameController input, helper readiness, Accessibility state, WoW focus tracking, and battery reporting.
+- `FireEngine.swift` owns repeat timers, modifier reference counts, and the final "can input leave the app?" gating rules.
+- `KeySimulator.swift` handles helper compilation, launchd registration, FIFO transport, and helper-specific Accessibility checks.
+- `KeyInjection.swift` is the seam that keeps the runtime testable without talking to the real helper.
+- `ContentView.swift`, `GroupEditorCard.swift`, `BindingRow.swift`, `ControllerMapView.swift`, and `NewGroupSheet.swift` make up the editable UI surface.
+- `EnhancedGlassModifier.swift` is a local visual polish layer for Tahoe glass depth and tint behavior.
+- `GSEControllerTests` covers pure logic and controller/runtime state without a live helper.
+- `GSEControllerUITests` contains the opt-in UI smoke flows.
+
 ### Building manually
 
 ```bash
@@ -149,7 +164,22 @@ xcodebuild -project GSEController.xcodeproj -scheme GSEController -destination '
 xcodebuild test -project GSEController.xcodeproj -scheme GSEController -destination 'platform=macOS,arch=arm64'
 ```
 
-127 Swift Testing checks across 24 suites cover `Models`, `ControllerManager`, `FireEngine`, `KeySimulator`, and `DualSenseBatteryMonitor`. Three UI tests cover profile creation/start, unsaved-edit protection, and numeric rate entry. Focused injected test doubles keep helper-dependent tests in-process via `TEST_HOST`/`BUNDLE_LOADER`.
+The default shared scheme runs the non-UI suite only. Right now that is 129 Swift Testing checks across 24 suites covering `Models`, `ControllerManager`, `FireEngine`, `KeySimulator`, and `DualSenseBatteryMonitor`.
+
+UI smoke tests are intentionally separate so they only run when you explicitly ask for them locally, or when CI sees meaningful UI-facing changes:
+
+```bash
+xcodebuild test -project GSEController.xcodeproj -scheme GSEControllerUISmoke -destination 'platform=macOS,arch=arm64'
+```
+
+The UI smoke scheme covers profile creation/start, unsaved-edit protection, and numeric rate entry. Focused injected test doubles keep helper-dependent tests in-process via `TEST_HOST`/`BUNDLE_LOADER`.
+
+### Repository Guide
+
+- `install.sh` is the supported build-and-install entry point for local source installs.
+- `make_icon.swift` regenerates the macOS app icon set from code so the committed icon assets stay reproducible.
+- `.github/workflows/build.yml` is the default CI lane.
+- `.github/workflows/ui-smoke.yml` is the path-gated UI smoke lane.
 
 ## License
 

@@ -2,6 +2,9 @@ import Foundation
 import Testing
 @testable import GSEController
 
+// Model tests document the persistence contract: stable raw values, legacy
+// migrations, preset constants, and the profile-store behaviors other layers
+// assume are already correct.
 // MARK: - ControllerButton
 
 @Suite struct ControllerButtonTests {

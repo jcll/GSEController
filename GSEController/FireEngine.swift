@@ -4,6 +4,9 @@ import os
 
 @MainActor
 class FireEngine: ObservableObject {
+    // FireEngine owns the active repeat timers and modifier reference counts.
+    // ControllerManager translates hardware button presses into bindings, but
+    // this type decides when key events are actually allowed to leave the app.
     private static let bundleID = Bundle.main.bundleIdentifier ?? "com.example.gsecontroller"
     private static let logger = Logger(subsystem: bundleID, category: "FireEngine")
 

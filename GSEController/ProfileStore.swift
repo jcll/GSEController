@@ -2,6 +2,8 @@ import Foundation
 import Observation
 import os
 
+// Persistence and migration layer for profile data. The rest of the app treats
+// this as the single source of truth for saved groups and active selection.
 enum ProfileStoreError: LocalizedError, Equatable {
     case emptyImport
 

@@ -9,6 +9,9 @@ import UserNotifications
 @MainActor
 @Observable
 final class ControllerManager {
+    // Bridges the GameController framework, key helper lifecycle, permission
+    // state, WoW focus tracking, and battery reporting into a single runtime
+    // object the UI can observe.
     private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.example.gsecontroller", category: "ControllerManager")
 
     var controllerName: String?
@@ -347,6 +350,11 @@ final class ControllerManager {
             statusMessage = "Grant Accessibility access, then try again"
             return
         }
+        hasHelperAccessibility = keyInjector.isHelperAccessibilityEnabled
+        guard hasHelperAccessibility else {
+            statusMessage = "Grant Key Helper Accessibility access, then try again"
+            return
+        }
 
         let requestID = UUID()
         startRequestID = requestID
@@ -470,6 +478,8 @@ final class ControllerManager {
     }
 
     func checkAccessibility() {
+        // The app and helper can have different TCC states, so always query
+        // them independently instead of inferring one from the other.
         hasAccessibility = keyInjector.isAccessibilityEnabled
         Task.detached(priority: .userInitiated) { [weak self] in
             let helperAx = self?.keyInjector.isHelperAccessibilityEnabled ?? false
@@ -493,6 +503,14 @@ final class ControllerManager {
     }
 
     func openHelperAccessibilitySettings() {
+        keyInjector.openAccessibilitySettings()
+        keyInjector.revealHelperInFinder()
+    }
+
+    func requestHelperAccessibilityPermission() {
+        // The helper is the process that posts CGEvents, so it needs its own
+        // trust prompt and Finder reveal path.
+        keyInjector.requestHelperAccessibility()
         keyInjector.openAccessibilitySettings()
         keyInjector.revealHelperInFinder()
     }

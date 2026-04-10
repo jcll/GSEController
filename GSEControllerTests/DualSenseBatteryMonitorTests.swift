@@ -2,6 +2,8 @@ import Foundation
 import Testing
 @testable import GSEController
 
+// Battery parsing is pure logic, so this file keeps the monitor's report-byte
+// interpretation documented and regression-tested without live HID hardware.
 @Suite struct DualSenseBatteryMonitorTests {
 
     // MARK: - parseBatteryByte

@@ -2,6 +2,9 @@ import SwiftUI
 
 // MARK: - New Group Sheet
 
+// Template picker for creating new profiles. The templates intentionally bias
+// toward one-handed GSE usage, but they all materialize as ordinary
+// ProfileGroup values so users can edit them freely afterward.
 struct NewGroupSheet: View {
     let store: ProfileStore
     @Binding var isPresented: Bool

@@ -2,6 +2,9 @@ import XCTest
 
 @MainActor
 final class GSEControllerUITests: XCTestCase {
+    // Smoke tests only. These intentionally cover one representative flow per
+    // high-value UI path so the suite stays useful without becoming the default
+    // every-change test lane.
     override func setUpWithError() throws {
         continueAfterFailure = false
     }

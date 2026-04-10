@@ -21,6 +21,9 @@ import os
 ///   BT   (report ID 0x31): data[54]   — 1 BT header byte precedes the common struct
 @MainActor
 final class DualSenseBatteryMonitor {
+    // This monitor is deliberately narrow: it supplements GameController's
+    // broken DualSense battery reporting without becoming the source of truth
+    // for controller attachment or input handling.
     private nonisolated static let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "com.gsecontroller",
         category: "DualSenseBattery"

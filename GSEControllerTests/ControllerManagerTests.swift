@@ -2,6 +2,9 @@ import Foundation
 import Testing
 @testable import GSEController
 
+// Focused fakes for ControllerManager tests. The manager owns sequencing and
+// user-facing state, so the test injector exposes just enough surface to drive
+// helper readiness and permission branches deterministically.
 private final class DeferredHelperInjector: KeyInjecting, @unchecked Sendable {
     var isAccessibilityEnabled = true
     var isHelperAccessibilityEnabled = true
@@ -18,6 +21,7 @@ private final class DeferredHelperInjector: KeyInjecting, @unchecked Sendable {
         responseFifoExists: true
     )
     var events: [String] = []
+    var helperAccessibilityRequests = 0
     private var pendingCompletions: [(@MainActor (Bool) -> Void)] = []
 
     func ensureHelper(onComplete: (@MainActor (Bool) -> Void)?) {
@@ -40,6 +44,7 @@ private final class DeferredHelperInjector: KeyInjecting, @unchecked Sendable {
     func modifierDown(_ modifier: KeyModifier) { events.append("down:\(modifier.rawValue)") }
     func modifierUp(_ modifier: KeyModifier) { events.append("up:\(modifier.rawValue)") }
     func requestAccessibility() {}
+    func requestHelperAccessibility() { helperAccessibilityRequests += 1 }
     func openAccessibilitySettings() {}
     func revealHelperInFinder() {}
     func stopHelper() {}
@@ -92,6 +97,8 @@ private final class DeferredHelperInjector: KeyInjecting, @unchecked Sendable {
 // MARK: - Start / Stop state transitions
 
 @Suite @MainActor struct StartStopStateTests {
+    // These tests protect the high-friction runtime edges: permission gating,
+    // deferred helper readiness, and stop-time cleanup.
     private func makeTestDefaults() -> (UserDefaults, String) {
         let suite = "com.test.gsecontroller.\(UUID().uuidString)"
         return (UserDefaults(suiteName: suite)!, suite)
@@ -185,6 +192,45 @@ private final class DeferredHelperInjector: KeyInjecting, @unchecked Sendable {
         #expect(!manager.isRunning)
         #expect(!manager.isStarting)
         #expect(manager.statusMessage == "Resolve duplicate button assignments before starting")
+    }
+
+    @Test func startRequiresHelperAccessibility() {
+        let (defaults, suite) = makeTestDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let injector = DeferredHelperInjector()
+        injector.isHelperAccessibilityEnabled = false
+        let manager = ControllerManager(
+            defaults: defaults,
+            keyInjector: injector,
+            testState: .init()
+        )
+        let group = ProfileGroup(name: "Needs Helper AX", bindings: [
+            MacroBinding(button: .rightShoulder),
+        ])
+
+        manager.start(group: group)
+
+        #expect(!manager.isRunning)
+        #expect(!manager.isStarting)
+        #expect(manager.hasHelperAccessibility == false)
+        #expect(manager.statusMessage == "Grant Key Helper Accessibility access, then try again")
+    }
+
+    @Test func requestHelperAccessibilityPermissionUsesInjector() {
+        let (defaults, suite) = makeTestDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let injector = DeferredHelperInjector()
+        let manager = ControllerManager(
+            defaults: defaults,
+            keyInjector: injector,
+            testState: .init()
+        )
+
+        manager.requestHelperAccessibilityPermission()
+
+        #expect(injector.helperAccessibilityRequests == 1)
     }
 
     @Test func stopReleasesModifiersThroughInjectedKeyInjector() {

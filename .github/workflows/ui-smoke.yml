@@ -1,0 +1,92 @@
+# UI smoke lane. This is intentionally separate from the default workflow and
+# only triggers for files that usually affect window flow, editor interaction,
+# command wiring, UI assets, or the UI tests themselves.
+name: UI Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ui-smoke.yml
+      - GSEController.xcodeproj/xcshareddata/xcschemes/GSEControllerUISmoke.xcscheme
+      - GSEController/ContentView.swift
+      - GSEController/BindingRow.swift
+      - GSEController/ControllerMapView.swift
+      - GSEController/EnhancedGlassModifier.swift
+      - GSEController/GroupEditorCard.swift
+      - GSEController/NewGroupSheet.swift
+      - GSEController/GSEControllerApp.swift
+      - GSEController/AppModel.swift
+      - GSEController/ControllerManager.swift
+      - GSEController/KeyInjection.swift
+      - GSEController/Models.swift
+      - GSEController/ProfileStore.swift
+      - GSEController/Info.plist
+      - GSEController/Assets.xcassets/**
+      - GSEControllerUITests/**
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ui-smoke.yml
+      - GSEController.xcodeproj/xcshareddata/xcschemes/GSEControllerUISmoke.xcscheme
+      - GSEController/ContentView.swift
+      - GSEController/BindingRow.swift
+      - GSEController/ControllerMapView.swift
+      - GSEController/EnhancedGlassModifier.swift
+      - GSEController/GroupEditorCard.swift
+      - GSEController/NewGroupSheet.swift
+      - GSEController/GSEControllerApp.swift
+      - GSEController/AppModel.swift
+      - GSEController/ControllerManager.swift
+      - GSEController/KeyInjection.swift
+      - GSEController/Models.swift
+      - GSEController/ProfileStore.swift
+      - GSEController/Info.plist
+      - GSEController/Assets.xcassets/**
+      - GSEControllerUITests/**
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  XCODE_PROJECT: GSEController.xcodeproj
+  XCODE_SCHEME: GSEControllerUISmoke
+  XCODE_DESTINATION: platform=macOS,arch=arm64
+
+jobs:
+  ui-smoke:
+    runs-on: macos-26
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create LocalConfig.xcconfig
+        run: |
+          cat > LocalConfig.xcconfig << 'EOF'
+          BUNDLE_ID_PREFIX = com.example
+          PRODUCT_BUNDLE_IDENTIFIER = $(BUNDLE_ID_PREFIX).GSEController
+          EOF
+
+      - name: Run UI smoke tests
+        run: |
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration Debug \
+            -destination "$XCODE_DESTINATION" \
+            -derivedDataPath "$RUNNER_TEMP/GSEControllerDerivedData" \
+            -resultBundlePath "$RUNNER_TEMP/GSEController-UISmoke.xcresult" \
+            test \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Upload UI smoke result bundle
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GSEController-UISmoke-xcresult
+          path: ${{ runner.temp }}/GSEController-UISmoke.xcresult
+          if-no-files-found: ignore

@@ -1,5 +1,8 @@
 import Foundation
 
+// Small diagnostics payload copied into the helper sheet and clipboard. It is
+// intentionally string-based so it stays easy to inspect in logs and support
+// messages.
 struct KeyHelperDiagnostics: Sendable {
     let helperPath: String
     let launchAgentPath: String
@@ -14,6 +17,9 @@ struct KeyHelperDiagnostics: Sendable {
 }
 
 protocol KeyInjecting: AnyObject, Sendable {
+    // Abstraction over key delivery and helper lifecycle. The production
+    // implementation talks to KeySimulator, while tests inject in-process fakes
+    // to keep timer and controller logic deterministic.
     var isAccessibilityEnabled: Bool { get }
     var isHelperAccessibilityEnabled: Bool { get }
     var diagnostics: KeyHelperDiagnostics { get }
@@ -23,6 +29,7 @@ protocol KeyInjecting: AnyObject, Sendable {
     func modifierDown(_ modifier: KeyModifier)
     func modifierUp(_ modifier: KeyModifier)
     func requestAccessibility()
+    func requestHelperAccessibility()
     func openAccessibilitySettings()
     func revealHelperInFinder()
     func stopHelper()
@@ -51,6 +58,10 @@ final class KeySimulatorBridge: KeyInjecting, @unchecked Sendable {
 
     func requestAccessibility() {
         KeySimulator.requestAccessibility()
+    }
+
+    func requestHelperAccessibility() {
+        KeySimulator.requestHelperAccessibility()
     }
 
     func openAccessibilitySettings() {
@@ -92,6 +103,7 @@ final class UITestKeyInjector: KeyInjecting, @unchecked Sendable {
     func modifierDown(_ modifier: KeyModifier) {}
     func modifierUp(_ modifier: KeyModifier) {}
     func requestAccessibility() {}
+    func requestHelperAccessibility() {}
     func openAccessibilitySettings() {}
     func revealHelperInFinder() {}
     func stopHelper() {}

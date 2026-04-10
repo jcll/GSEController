@@ -2,6 +2,9 @@ import SwiftUI
 
 // MARK: - Group Editor Card
 
+// Stateful wrapper around a ProfileGroup draft. The store owns persisted data,
+// but the editor keeps local changes isolated until Save so selection changes
+// and unsaved-change prompts have a clear source of truth.
 struct GroupEditorCard: View {
     let group: ProfileGroup
     let onSave: (ProfileGroup) -> Void

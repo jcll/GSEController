@@ -5,6 +5,8 @@ import AppKit
 import os
 
 enum KeySimulator {
+    // Low-level helper manager. This file owns helper compilation, launchd
+    // registration, FIFO transport, and helper-specific Accessibility checks.
     private static let bundleID = Bundle.main.bundleIdentifier ?? "com.example.gsecontroller"
     private static let logger = Logger(subsystem: bundleID, category: "KeySimulator")
 
@@ -30,9 +32,6 @@ enum KeySimulator {
         var pendingCallbacks: [(@MainActor (Bool) -> Void)] = []
     }
     private static let _setup = OSAllocatedUnfairLock<HelperSetup>(initialState: HelperSetup())
-    // Serial queue for isHelperAccessibilityEnabled — prevents two concurrent FIFO readers
-    // from racing over the single-byte AX response the helper writes.
-    private static let axQueryQueue = DispatchQueue(label: "\(bundleID).ax-query")
     private static let fifoPath: String = {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("\(bundleID).keys")
@@ -47,7 +46,7 @@ enum KeySimulator {
     private static let agentLabel = "\(bundleID).helper"
 
     // Bump this when the helper source changes to force recompilation.
-    private static let helperVersion = "v8-ax-fifo"
+    private static let helperVersion = "v9-direct-ax-check"
 
     private static var supportDir: URL {
         let base = FileManager.default
@@ -112,6 +111,21 @@ enum KeySimulator {
         int main(int argc, char *argv[]) {
             if (argc > 1 && strcmp(argv[1], "--check-ax") == 0)
                 return AXIsProcessTrusted() ? 0 : 1;
+            if (argc > 1 && strcmp(argv[1], "--prompt-ax") == 0) {
+                const void *keys[] = { kAXTrustedCheckOptionPrompt };
+                const void *values[] = { kCFBooleanTrue };
+                CFDictionaryRef options = CFDictionaryCreate(
+                    kCFAllocatorDefault,
+                    keys,
+                    values,
+                    1,
+                    &kCFTypeDictionaryKeyCallBacks,
+                    &kCFTypeDictionaryValueCallBacks
+                );
+                bool trusted = AXIsProcessTrustedWithOptions(options);
+                CFRelease(options);
+                return trusted ? 0 : 1;
+            }
             const char *fifo_path = get_fifo_path();
             const char *resp_path = getenv("RESPONSE_FIFO_PATH");
             while (1) {
@@ -252,36 +266,17 @@ enum KeySimulator {
     }
 
     static var isHelperAccessibilityEnabled: Bool {
-        // Serialise on axQueryQueue: the helper writes exactly one response byte per query,
-        // so two concurrent callers would race over that byte and one would time out.
-        axQueryQueue.sync {
-            guard FileManager.default.fileExists(atPath: helperURL.path) else { return false }
-            // Query the already-running launchd helper via the key FIFO (command type 3).
-            // The helper is bootstrapped by launchd, making it its own TCC responsible process,
-            // so AXIsProcessTrusted() inside it correctly reflects the helper's own grant —
-            // independent of whether the parent app is trusted yet.
-            ensureResponseFIFO()
-            // Open the response FIFO for reading before sending the query so the helper
-            // can open it for writing without receiving ENXIO.
-            let rfd = Darwin.open(responseFifoPath, O_RDONLY | O_NONBLOCK)
-            guard rfd >= 0 else { return false }
-            defer { Darwin.close(rfd) }
-            // Send type-3 command. Returns false immediately if the helper isn't running yet.
-            let sent = _fd.withLock { fd -> Bool in
-                guard fd >= 0 else { return false }
-                var cmd: (UInt8, UInt8, UInt8, UInt8) = (3, 0, 0, 0)
-                return withUnsafeBytes(of: &cmd) { Darwin.write(fd, $0.baseAddress!, 4) } == 4
-            }
-            guard sent else { return false }
-            // Poll for the 1-byte response with a 2-second timeout (20 × 100 ms).
-            var response: UInt8 = 0
-            for _ in 0..<20 {
-                let n = Darwin.read(rfd, &response, 1)
-                if n == 1 { return response == 1 }
-                usleep(100_000)
-            }
-            return false
-        }
+        // Execute the helper directly for AX status instead of querying the
+        // running FIFO worker. TCC trust is attached to the helper binary's
+        // identity, and direct execution gives an authoritative answer even if
+        // the long-running launchd instance is stale or misreporting.
+        helperAccessibilityStatus(arguments: ["--check-ax"])
+    }
+
+    static func requestHelperAccessibility() {
+        // The helper can ask for its own TCC prompt because the helper binary,
+        // not the host app, is the process that posts CGEvents.
+        _ = helperAccessibilityStatus(arguments: ["--prompt-ax"])
     }
 
     static func openAccessibilitySettings() {
@@ -501,5 +496,25 @@ enum KeySimulator {
         for callback in callbacks {
             Task { @MainActor in callback(success) }
         }
+    }
+
+    @discardableResult
+    private static func helperAccessibilityStatus(arguments: [String]) -> Bool {
+        // This direct execution path is also what keeps the diagnostics sheet
+        // honest: a nonzero exit means the helper binary itself is not trusted.
+        guard FileManager.default.fileExists(atPath: helperURL.path) else { return false }
+        let process = Process()
+        process.executableURL = helperURL
+        process.arguments = arguments
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+        } catch {
+            logger.error("helper AX check launch failed: \(error.localizedDescription, privacy: .public)")
+            return false
+        }
+        process.waitUntilExit()
+        return process.terminationStatus == 0
     }
 }
