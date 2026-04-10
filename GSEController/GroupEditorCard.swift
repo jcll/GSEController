@@ -5,12 +5,18 @@ import SwiftUI
 struct GroupEditorCard: View {
     let group: ProfileGroup
     let onSave: (ProfileGroup) -> Void
+    let onDraftChange: (ProfileGroup, Bool) -> Void
 
     @State private var draft: ProfileGroup
 
-    init(group: ProfileGroup, onSave: @escaping (ProfileGroup) -> Void) {
+    init(
+        group: ProfileGroup,
+        onSave: @escaping (ProfileGroup) -> Void,
+        onDraftChange: @escaping (ProfileGroup, Bool) -> Void
+    ) {
         self.group = group
         self.onSave = onSave
+        self.onDraftChange = onDraftChange
         self._draft = State(initialValue: group)
     }
 
@@ -43,6 +49,13 @@ struct GroupEditorCard: View {
                 }
             }
 
+            LabeledContent("Notes") {
+                TextField("Macro keybind, spec, talents, or setup notes", text: $draft.notes, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(2...4)
+                    .accessibilityIdentifier("group-notes-field")
+            }
+
             Divider()
 
             ControllerMapView(bindings: draft.bindings)
@@ -73,16 +86,18 @@ struct GroupEditorCard: View {
 
                 Spacer()
 
-                if hasChanges {
-                    Text("Unsaved changes")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                VStack(alignment: .trailing, spacing: 2) {
+                    if hasChanges {
+                        Text("Unsaved changes")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
 
-                if hasDuplicateButtons {
-                    Text("Each controller button can only be assigned once")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
+                    if hasDuplicateButtons {
+                        Text("Each controller button can only be assigned once")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
                 }
 
                 Button(action: { onSave(draft) }) {
@@ -98,9 +113,16 @@ struct GroupEditorCard: View {
         }
         .padding(16)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
-        .enhancedGlass(cornerRadius: 12, tint: hasChanges ? .blue : nil)
+        .enhancedGlass(cornerRadius: 12, style: .primary)
+        .onAppear {
+            reportDraft(draft, comparedTo: group)
+        }
+        .onChange(of: draft) { _, newDraft in
+            reportDraft(newDraft, comparedTo: group)
+        }
         .onChange(of: group) { _, newGroup in
             draft = newGroup
+            reportDraft(newGroup, comparedTo: newGroup)
         }
     }
 
@@ -117,5 +139,9 @@ struct GroupEditorCard: View {
             mode: mode,
             rate: 250
         ))
+    }
+
+    private func reportDraft(_ draft: ProfileGroup, comparedTo source: ProfileGroup) {
+        onDraftChange(draft, draft != source)
     }
 }

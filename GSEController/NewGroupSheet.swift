@@ -10,6 +10,7 @@ struct NewGroupSheet: View {
         let id: String
         let name: String
         let icon: String
+        let iconColor: Color
         let description: String
         let group: ProfileGroup
 
@@ -28,6 +29,7 @@ struct NewGroupSheet: View {
                 id: "guardian-druid",
                 name: "Guardian Druid",
                 icon: "pawprint.fill",
+                iconColor: .brown,
                 description: "2 rotations + 3 d-pad defensive/utility modifiers",
                 group: ProfileGroup(name: "Guardian Druid", bindings: [
                     Self.binding(.rightShoulder, mode: .hold, label: "Bear Form Rotation (ST)"),
@@ -41,6 +43,7 @@ struct NewGroupSheet: View {
                 id: "generic-tank",
                 name: "Generic Tank",
                 icon: "shield.fill",
+                iconColor: .blue,
                 description: "2 rotations + 3 d-pad cooldown modifiers",
                 group: ProfileGroup(name: "Generic Tank", bindings: [
                     Self.binding(.rightShoulder, mode: .hold, label: "Single Target Rotation"),
@@ -54,6 +57,7 @@ struct NewGroupSheet: View {
                 id: "melee-dps",
                 name: "Melee DPS",
                 icon: "figure.martial.arts",
+                iconColor: .red,
                 description: "2 rotations + defensive and offensive modifiers",
                 group: ProfileGroup(name: "Melee DPS", bindings: [
                     Self.binding(.rightShoulder, mode: .hold, label: "Single Target Rotation"),
@@ -67,6 +71,7 @@ struct NewGroupSheet: View {
                 id: "ranged-caster",
                 name: "Ranged / Caster",
                 icon: "wand.and.stars",
+                iconColor: .purple,
                 description: "2 rotations + defensive and burst modifiers",
                 group: ProfileGroup(name: "Ranged / Caster", bindings: [
                     Self.binding(.rightShoulder, mode: .hold, label: "Main Rotation"),
@@ -80,6 +85,7 @@ struct NewGroupSheet: View {
                 id: "healer",
                 name: "Healer",
                 icon: "cross.fill",
+                iconColor: .green,
                 description: "1 heal rotation + 3 cooldown modifiers",
                 group: ProfileGroup(name: "Healer", bindings: [
                     Self.binding(.rightShoulder, mode: .hold, label: "Main Heal Rotation"),
@@ -92,6 +98,7 @@ struct NewGroupSheet: View {
                 id: "simple-r1",
                 name: "Simple — R1 Only",
                 icon: "hand.point.right.fill",
+                iconColor: .secondary,
                 description: "Just one button for rapid-fire macro spam",
                 group: ProfileGroup(name: "Simple", bindings: [
                     Self.binding(.rightShoulder, mode: .hold, label: "Rotation"),
@@ -101,6 +108,7 @@ struct NewGroupSheet: View {
                 id: "blank",
                 name: "Blank",
                 icon: "square.dashed",
+                iconColor: .secondary,
                 description: "Start with one empty binding",
                 group: ProfileGroup(name: "New Profile", bindings: [
                     Self.binding(.rightShoulder, mode: .hold, label: ""),
@@ -129,7 +137,7 @@ struct NewGroupSheet: View {
                             HStack(alignment: .top, spacing: 10) {
                                 Image(systemName: template.icon)
                                     .font(.title2)
-                                    .foregroundStyle(.blue)
+                                    .foregroundStyle(template.iconColor)
                                     .frame(width: 28)
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(template.name)
@@ -144,10 +152,11 @@ struct NewGroupSheet: View {
                             }
                             .padding(10)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(RoundedRectangle(cornerRadius: 10))
                             .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10))
-                            .enhancedGlass(cornerRadius: 10)
+                            .enhancedGlass(cornerRadius: 10, style: .nested)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(TemplateCardButtonStyle(accent: template.iconColor))
                         .accessibilityIdentifier("template-\(template.id)")
                     }
                 }
@@ -170,6 +179,42 @@ struct NewGroupSheet: View {
             }
             .padding(24)
             .frame(width: 460)
+        }
+    }
+
+    private struct TemplateCardButtonStyle: ButtonStyle {
+        let accent: Color
+
+        func makeBody(configuration: Configuration) -> some View {
+            TemplateCardButton(configuration: configuration, accent: accent)
+        }
+    }
+
+    private struct TemplateCardButton: View {
+        let configuration: ButtonStyleConfiguration
+        let accent: Color
+
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+        @State private var isHovering = false
+
+        private var isHighlighted: Bool { isHovering || configuration.isPressed }
+
+        var body: some View {
+            configuration.label
+                .background {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(accent.opacity(configuration.isPressed ? 0.08 : (isHovering ? 0.04 : 0)))
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10)
+                        .strokeBorder(accent.opacity(configuration.isPressed ? 0.36 : (isHovering ? 0.24 : 0)), lineWidth: 0.75)
+                        .allowsHitTesting(false)
+                }
+                .brightness(isHighlighted ? 0.03 : 0)
+                .scaleEffect(configuration.isPressed && !reduceMotion ? 0.985 : 1)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: isHovering)
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.10), value: configuration.isPressed)
+                .onHover { isHovering = $0 }
         }
     }
 }

@@ -64,6 +64,26 @@ enum KeySimulator {
             .appendingPathComponent("Library/LaunchAgents/\(agentLabel).plist")
     }
 
+    private static var helperLogURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/GSEController/helper.log")
+    }
+
+    static var diagnostics: KeyHelperDiagnostics {
+        KeyHelperDiagnostics(
+            helperPath: helperURL.path,
+            launchAgentPath: plistURL.path,
+            launchAgentLabel: agentLabel,
+            fifoPath: fifoPath,
+            responseFifoPath: responseFifoPath,
+            logPath: helperLogURL.path,
+            helperExists: FileManager.default.fileExists(atPath: helperURL.path),
+            launchAgentExists: FileManager.default.fileExists(atPath: plistURL.path),
+            fifoExists: FileManager.default.fileExists(atPath: fifoPath),
+            responseFifoExists: FileManager.default.fileExists(atPath: responseFifoPath)
+        )
+    }
+
     // 4-byte protocol:
     //   buf[0]: command type
     //     0 = press+release key
@@ -419,7 +439,7 @@ enum KeySimulator {
                 <key>KeepAlive</key>
                 <true/>
                 <key>StandardErrorPath</key>
-                <string>\(FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/GSEController/helper.log").path)</string>
+                    <string>\(helperLogURL.path)</string>
             </dict>
             </plist>
             """

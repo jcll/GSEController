@@ -24,6 +24,7 @@ final class ControllerManager {
     var helperReady = true
     var helperSetupFailed = false
     var fifoHealthy = true
+    var lastStartedGroupName: String?
     var wowIsActive = false {
         didSet { updateStatusIfRunning() }
     }
@@ -46,6 +47,10 @@ final class ControllerManager {
     @ObservationIgnored nonisolated(unsafe) private var batteryTimer: Timer?
     @ObservationIgnored private let dualSenseBattery = DualSenseBatteryMonitor()
     @ObservationIgnored private var lowBatteryNotified = false
+
+    var keyHelperDiagnostics: KeyHelperDiagnostics {
+        keyInjector.diagnostics
+    }
 
     struct TestState {
         var controllerName: String = "Test Controller"
@@ -363,6 +368,7 @@ final class ControllerManager {
             }
 
             self.activeGroupName = group.name
+            self.lastStartedGroupName = group.name
             self.activeBindings = group.bindings
             self.isRunning = true
             Self.logger.info("Started group \"\(group.name, privacy: .public)\" with \(group.bindings.count) binding(s)")
@@ -387,6 +393,11 @@ final class ControllerManager {
         if isConnected {
             statusMessage = "Stopped"
         }
+    }
+
+    func releaseAllInput() {
+        stop()
+        statusMessage = "Released all held keys"
     }
 
     // MARK: - Button Handlers
@@ -484,6 +495,15 @@ final class ControllerManager {
     func openHelperAccessibilitySettings() {
         keyInjector.openAccessibilitySettings()
         keyInjector.revealHelperInFinder()
+    }
+
+    func revealHelperInFinder() {
+        keyInjector.revealHelperInFinder()
+    }
+
+    func openHelperLogFolder() {
+        let logURL = URL(fileURLWithPath: keyInjector.diagnostics.logPath)
+        NSWorkspace.shared.selectFile(logURL.path, inFileViewerRootedAtPath: logURL.deletingLastPathComponent().path)
     }
 
     func requestAccessibilityPermission() {

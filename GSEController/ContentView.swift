@@ -1,15 +1,37 @@
 import SwiftUI
 import Observation
+import AppKit
 
 struct ContentView: View {
     @State private var model = AppModel()
     @State private var showingCPInfo = false
     @State private var showingNewGroup = false
+    @State private var showingHelperDiagnostics = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var groupToDelete: ProfileGroup? = nil
+    @State private var pendingUnsavedAction: PendingUnsavedAction? = nil
+    @State private var activeDraft: ProfileGroup? = nil
+    @State private var hasUnsavedGroupChanges = false
+    @State private var editorResetID = UUID()
 
     private var store: ProfileStore { model.store }
     private var controller: ControllerManager { model.controller }
+    private var canSaveActiveDraft: Bool {
+        guard let activeDraft else { return false }
+        return !activeDraft.name.trimmingCharacters(in: .whitespaces).isEmpty &&
+            !activeDraft.hasDuplicateButtons
+    }
+
+    private enum PendingUnsavedAction {
+        case select(UUID?)
+        case showNewGroup
+        case delete(ProfileGroup)
+        case duplicate(ProfileGroup)
+        case exportAll
+        case exportSelected(ProfileGroup)
+        case importProfiles(ProfileImportMode)
+        case start
+    }
 
     var body: some View {
         @Bindable var model = model
@@ -20,7 +42,7 @@ struct ContentView: View {
                     id: \.id,
                     selection: Binding(
                         get: { store.activeGroupId },
-                        set: { model.selectGroup($0) }
+                        set: { requestAction(.select($0)) }
                     )
                 ) { g in
                     VStack(alignment: .leading, spacing: 2) {
@@ -31,7 +53,20 @@ struct ContentView: View {
                             .foregroundStyle(.secondary)
                     }
                     .contextMenu {
+                        Button {
+                            requestAction(.duplicate(g))
+                        } label: {
+                            Label("Duplicate \"\(g.name)\"", systemImage: "plus.square.on.square")
+                        }
+
+                        Button {
+                            requestAction(.exportSelected(g))
+                        } label: {
+                            Label("Export \"\(g.name)\"…", systemImage: "square.and.arrow.up")
+                        }
+
                         if store.groups.count > 1 {
+                            Divider()
                             Button(role: .destructive) {
                                 groupToDelete = g
                             } label: {
@@ -47,7 +82,7 @@ struct ContentView: View {
 
                 HStack(spacing: 0) {
                     Button {
-                        showingNewGroup = true
+                        requestAction(.showNewGroup)
                     } label: {
                         Image(systemName: "plus")
                             .frame(width: 28, height: 24)
@@ -75,8 +110,16 @@ struct ContentView: View {
                     Spacer()
 
                     Menu {
-                        Button("Export Profiles…") { model.exportProfiles() }
-                        Button("Import Profiles…") { model.importProfiles() }
+                        if let group = store.activeGroup {
+                            Button("Duplicate Selected Profile") { requestAction(.duplicate(group)) }
+                            Button("Export Selected Profile…") { requestAction(.exportSelected(group)) }
+                            Divider()
+                        }
+                        Button("Export All Profiles…") { requestAction(.exportAll) }
+                        Button("Import and Replace Profiles…") { requestAction(.importProfiles(.replace)) }
+                        Button("Import and Merge Profiles…") { requestAction(.importProfiles(.merge)) }
+                        Divider()
+                        Button("Helper Diagnostics…") { showingHelperDiagnostics = true }
                     } label: {
                         Image(systemName: "ellipsis")
                             .frame(width: 28, height: 24)
@@ -93,56 +136,71 @@ struct ContentView: View {
             .toolbar(removing: .sidebarToggle)
         } detail: {
             GlassEffectContainer {
-                VStack(spacing: 20) {
-                    controllerCard
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 20) {
+                        controllerCard
 
-                    if !controller.hasAccessibility || !controller.hasHelperAccessibility {
-                        permissionSetupCard
-                    }
-
-                    if !controller.helperReady && !controller.helperSetupFailed {
-                        helperPreparingCard
-                    }
-
-                    if controller.helperSetupFailed {
-                        helperErrorCard
-                    }
-
-                    if !controller.fifoHealthy {
-                        fifoUnhealthyCard
-                    }
-
-                    if let group = store.activeGroup {
-                        GroupEditorCard(group: group, onSave: { saved in
-                            model.saveGroup(saved)
-                        })
-                        .disabled(controller.isRunning || controller.isStarting)
-                        .opacity((controller.isRunning || controller.isStarting) ? 0.6 : 1.0)
-                        if controller.isRunning || controller.isStarting {
-                            Text("Stop the controller to edit bindings")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                        if !controller.hasAccessibility || !controller.hasHelperAccessibility {
+                            permissionSetupCard
                         }
-                    } else {
-                        VStack(spacing: 8) {
-                            Image(systemName: "plus.square.dashed")
-                                .font(.largeTitle)
-                                .foregroundStyle(.secondary)
-                            Text("Create a profile to get started")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                            Button("New Profile") { showingNewGroup = true }
-                                .buttonStyle(.glass)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(32)
-                    }
 
-                    optionsRow
-                    statusRow
-                    startStopButton
+                        if !controller.helperReady && !controller.helperSetupFailed {
+                            helperPreparingCard
+                        }
+
+                        if controller.helperSetupFailed {
+                            helperErrorCard
+                        }
+
+                        if !controller.fifoHealthy {
+                            fifoUnhealthyCard
+                        }
+
+                        if let group = store.activeGroup {
+                            GroupEditorCard(group: group, onSave: { saved in
+                                model.saveGroup(saved)
+                                activeDraft = saved
+                                hasUnsavedGroupChanges = false
+                            }, onDraftChange: { draft, hasChanges in
+                                activeDraft = draft
+                                hasUnsavedGroupChanges = hasChanges
+                            })
+                            .id(editorResetID)
+                            .disabled(controller.isRunning || controller.isStarting)
+                            .opacity((controller.isRunning || controller.isStarting) ? 0.6 : 1.0)
+                            .overlay(alignment: .topTrailing) {
+                                if controller.isRunning || controller.isStarting {
+                                    Text("Stop the controller to edit bindings")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(.regularMaterial, in: Capsule())
+                                        .padding(12)
+                                }
+                            }
+                        } else {
+                            VStack(spacing: 8) {
+                                Image(systemName: "plus.square.dashed")
+                                    .font(.largeTitle)
+                                    .foregroundStyle(.secondary)
+                                Text("Create a profile to get started")
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                                Button("New Profile") { requestAction(.showNewGroup) }
+                                    .buttonStyle(.glass)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(32)
+                            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
+                            .enhancedGlass(cornerRadius: 12, style: .primary)
+                        }
+
+                        runControlsPanel
+                    }
+                    .padding(20)
+                    .frame(maxWidth: .infinity)
                 }
-                .padding(20)
             }
             .toolbar {
                 ToolbarItem(placement: .navigation) {
@@ -164,26 +222,92 @@ struct ContentView: View {
         .sheet(isPresented: $showingNewGroup) {
             NewGroupSheet(store: store, isPresented: $showingNewGroup)
         }
+        .sheet(isPresented: $showingHelperDiagnostics) {
+            helperDiagnosticsSheet
+        }
         .confirmationDialog(
             "Delete \"\(groupToDelete?.name ?? "")\"?",
             isPresented: Binding(get: { groupToDelete != nil }, set: { if !$0 { groupToDelete = nil } }),
             titleVisibility: .visible
         ) {
             Button("Delete", role: .destructive) {
-                if let g = groupToDelete { model.deleteGroup(g) }
+                if let g = groupToDelete { requestAction(.delete(g)) }
                 groupToDelete = nil
             }
             Button("Cancel", role: .cancel) { groupToDelete = nil }
         } message: {
             Text("This profile and all its bindings will be permanently deleted.")
         }
-        .alert(item: $model.activeAlert) { alert in
-            Alert(
-                title: Text(alert.title),
-                message: Text(alert.message),
-                dismissButton: .default(Text("OK"))
-            )
+        .confirmationDialog(
+            model.pendingImport?.title ?? "Import Profiles?",
+            isPresented: Binding(
+                get: { model.pendingImport != nil },
+                set: { if !$0 { model.cancelPendingImport() } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let pendingImport = model.pendingImport {
+                Button(pendingImport.mode.actionTitle) {
+                    model.confirmPendingImport()
+                    resetEditorDraft()
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                model.cancelPendingImport()
+            }
+        } message: {
+            Text(model.pendingImport?.message ?? "")
         }
+        .confirmationDialog(
+            "Unsaved Changes",
+            isPresented: Binding(
+                get: { pendingUnsavedAction != nil },
+                set: { if !$0 { pendingUnsavedAction = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if canSaveActiveDraft {
+                Button("Save and Continue") {
+                    continueAfterSavingDraft()
+                }
+                .accessibilityIdentifier("unsaved-save-button")
+            }
+            Button("Discard and Continue", role: .destructive) {
+                continueAfterDiscardingDraft()
+            }
+            .accessibilityIdentifier("unsaved-discard-button")
+            Button("Cancel", role: .cancel) {
+                pendingUnsavedAction = nil
+            }
+            .accessibilityIdentifier("unsaved-cancel-button")
+        } message: {
+            Text("Save your current profile changes before continuing.")
+        }
+        .alert(
+            model.activeAlert?.title ?? "",
+            isPresented: Binding(
+                get: { model.activeAlert != nil },
+                set: { if !$0 { model.activeAlert = nil } }
+            ),
+            presenting: model.activeAlert
+        ) { _ in
+            Button("OK") { model.activeAlert = nil }
+        } message: { alert in
+            Text(alert.message)
+        }
+        .focusedSceneValue(\.gseNewProfileAction, { requestAction(.showNewGroup) })
+        .focusedSceneValue(\.gseSaveProfileAction, { _ = saveActiveDraft() })
+        .focusedSceneValue(\.gseDuplicateProfileAction, duplicateActiveProfile)
+        .focusedSceneValue(\.gseExportSelectedProfileAction, exportSelectedProfile)
+        .focusedSceneValue(\.gseExportAllProfilesAction, { requestAction(.exportAll) })
+        .focusedSceneValue(\.gseImportReplaceProfilesAction, { requestAction(.importProfiles(.replace)) })
+        .focusedSceneValue(\.gseImportMergeProfilesAction, { requestAction(.importProfiles(.merge)) })
+        .focusedSceneValue(\.gseStartStopAction, startStopRequested)
+        .focusedSceneValue(\.gseReleaseKeysAction, { model.releaseAllInput() })
+        .focusedSceneValue(\.gseHelperDiagnosticsAction, { showingHelperDiagnostics = true })
+        .focusedSceneValue(\.gseCanSaveProfile, canSaveActiveDraft)
+        .focusedSceneValue(\.gseHasActiveProfile, store.activeGroup != nil)
+        .focusedSceneValue(\.gseCanStartStop, canStartStop)
     }
 
     // MARK: - Controller Card
@@ -200,6 +324,11 @@ struct ContentView: View {
                 Text(controller.isConnected ? "Connected" : "Searching\u{2026}")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if let lastStarted = controller.lastStartedGroupName, !controller.isRunning {
+                    Text("Last started: \(lastStarted)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Spacer()
@@ -215,7 +344,7 @@ struct ContentView: View {
         }
         .padding(16)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
-        .enhancedGlass(cornerRadius: 12, tint: controller.isConnected ? .green : nil)
+        .enhancedGlass(cornerRadius: 12, tint: controller.isConnected ? .green : nil, style: .primary)
     }
 
     private func batteryIndicator(level: Float, charging: Bool) -> some View {
@@ -312,8 +441,8 @@ struct ContentView: View {
             }
         }
         .padding(14)
-        .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.orange.opacity(0.3), lineWidth: 0.5))
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
+        .enhancedGlass(cornerRadius: 12, tint: .orange, style: .status)
     }
 
     private var helperPreparingCard: some View {
@@ -330,7 +459,8 @@ struct ContentView: View {
             Spacer()
         }
         .padding(14)
-        .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
+        .enhancedGlass(cornerRadius: 12, style: .status)
     }
 
     private func permissionRow<Actions: View>(
@@ -385,8 +515,8 @@ struct ContentView: View {
             .controlSize(.small)
         }
         .padding(14)
-        .background(.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.red.opacity(0.3), lineWidth: 0.5))
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
+        .enhancedGlass(cornerRadius: 12, tint: .red, style: .status)
     }
 
     private var fifoUnhealthyCard: some View {
@@ -404,8 +534,8 @@ struct ContentView: View {
             Spacer()
         }
         .padding(14)
-        .background(.yellow.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.yellow.opacity(0.3), lineWidth: 0.5))
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
+        .enhancedGlass(cornerRadius: 12, tint: .yellow, style: .status)
     }
 
     // MARK: - Options
@@ -429,10 +559,34 @@ struct ContentView: View {
             .help("ConsolePort compatibility")
             .accessibilityLabel("ConsolePort compatibility")
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+    }
+
+    private var runControlsPanel: some View {
+        VStack(spacing: 10) {
+            optionsRow
+            Divider()
+            HStack(spacing: 10) {
+                statusRow
+                Button("Release Keys") {
+                    model.releaseAllInput()
+                }
+                .buttonStyle(.glass)
+                .controlSize(.small)
+                .disabled(controller.isStarting)
+                .help("Stop firing and release all held modifiers")
+                .accessibilityIdentifier("release-keys-button")
+            }
+            startStopButton
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
-        .enhancedGlass(cornerRadius: 12)
+        .enhancedGlass(
+            cornerRadius: 12,
+            tint: controller.isFiring ? .red : (controller.isRunning ? .green : nil),
+            style: .primary,
+            isActive: controller.isFiring || controller.isRunning
+        )
     }
 
     // MARK: - ConsolePort Info Sheet
@@ -511,10 +665,6 @@ struct ContentView: View {
                 .accessibilityIdentifier("status-message")
             Spacer()
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 10))
-        .enhancedGlass(cornerRadius: 10, tint: controller.isFiring ? .red : (controller.isRunning ? .green : nil))
     }
 
     private var statusColor: Color {
@@ -530,7 +680,7 @@ struct ContentView: View {
 
     @ViewBuilder private var startStopButton: some View {
         Button(action: {
-            model.startOrStopSelectedGroup()
+            startStopRequested()
         }) {
             Label(
                 controller.isStarting ? "Starting…" : (controller.isRunning ? "Stop" : "Start"),
@@ -591,6 +741,196 @@ struct ContentView: View {
         let pieces = name.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber })
         let slug = pieces.isEmpty ? "profile" : pieces.joined(separator: "-")
         return "profile-row-\(slug)"
+    }
+
+    private var helperDiagnosticsSheet: some View {
+        let diagnostics = controller.keyHelperDiagnostics
+        return GlassEffectContainer {
+            VStack(alignment: .leading, spacing: 16) {
+                Label("Helper Diagnostics", systemImage: "stethoscope")
+                    .font(.title3.weight(.semibold))
+
+                VStack(alignment: .leading, spacing: 8) {
+                    diagnosticRow("App Accessibility", controller.hasAccessibility ? "Granted" : "Missing")
+                    diagnosticRow("Helper Accessibility", controller.hasHelperAccessibility ? "Granted" : "Missing")
+                    diagnosticRow("Helper Ready", controller.helperReady ? "Yes" : "No")
+                    diagnosticRow("FIFO Health", controller.fifoHealthy ? "Healthy" : "Reconnecting")
+                    diagnosticRow("Launch Agent", diagnostics.launchAgentLabel)
+                    diagnosticRow("Helper", diagnostics.helperExists ? diagnostics.helperPath : "Missing at \(diagnostics.helperPath)")
+                    diagnosticRow("Launch Agent Plist", diagnostics.launchAgentExists ? diagnostics.launchAgentPath : "Missing at \(diagnostics.launchAgentPath)")
+                    diagnosticRow("Key FIFO", diagnostics.fifoExists ? diagnostics.fifoPath : "Missing at \(diagnostics.fifoPath)")
+                    diagnosticRow("AX Response FIFO", diagnostics.responseFifoExists ? diagnostics.responseFifoPath : "Missing at \(diagnostics.responseFifoPath)")
+                    diagnosticRow("Helper Log", diagnostics.logPath)
+                }
+                .font(.caption)
+
+                HStack {
+                    Button("Open Settings") {
+                        controller.openHelperAccessibilitySettings()
+                    }
+                    .buttonStyle(.glass)
+
+                    Button("Reveal Helper") {
+                        controller.revealHelperInFinder()
+                    }
+                    .buttonStyle(.glass)
+
+                    Button("Open Logs") {
+                        controller.openHelperLogFolder()
+                    }
+                    .buttonStyle(.glass)
+
+                    Button("Copy Diagnostics") {
+                        copyHelperDiagnostics()
+                    }
+                    .buttonStyle(.glass)
+
+                    Button("Restart Helper") {
+                        controller.retryHelperSetup()
+                    }
+                    .buttonStyle(.glass)
+
+                    Spacer()
+
+                    Button("Done") { showingHelperDiagnostics = false }
+                        .buttonStyle(.glassProminent)
+                        .keyboardShortcut(.defaultAction)
+                }
+            }
+            .padding(24)
+            .frame(width: 560)
+        }
+    }
+
+    private func diagnosticRow(_ label: String, _ value: String) -> some View {
+        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
+            GridRow {
+                Text(label)
+                    .foregroundStyle(.secondary)
+                Text(value)
+                    .textSelection(.enabled)
+                    .lineLimit(2)
+            }
+        }
+    }
+
+    private func startStopRequested() {
+        if controller.isRunning {
+            model.startOrStopSelectedGroup()
+        } else {
+            requestAction(.start)
+        }
+    }
+
+    private var canStartStop: Bool {
+        controller.isRunning ||
+            (!controller.isStarting &&
+             controller.isConnected &&
+             store.activeGroup?.bindings.isEmpty == false &&
+             store.activeGroup?.hasDuplicateButtons == false &&
+             controller.helperReady)
+    }
+
+    private func duplicateActiveProfile() {
+        guard let group = store.activeGroup else { return }
+        requestAction(.duplicate(group))
+    }
+
+    private func exportSelectedProfile() {
+        guard let group = store.activeGroup else { return }
+        requestAction(.exportSelected(group))
+    }
+
+    private func copyHelperDiagnostics() {
+        let diagnostics = controller.keyHelperDiagnostics
+        let summary = """
+        App Accessibility: \(controller.hasAccessibility ? "Granted" : "Missing")
+        Helper Accessibility: \(controller.hasHelperAccessibility ? "Granted" : "Missing")
+        Helper Ready: \(controller.helperReady ? "Yes" : "No")
+        FIFO Health: \(controller.fifoHealthy ? "Healthy" : "Reconnecting")
+        Launch Agent: \(diagnostics.launchAgentLabel)
+        Helper: \(diagnostics.helperPath) (exists: \(diagnostics.helperExists))
+        Launch Agent Plist: \(diagnostics.launchAgentPath) (exists: \(diagnostics.launchAgentExists))
+        Key FIFO: \(diagnostics.fifoPath) (exists: \(diagnostics.fifoExists))
+        AX Response FIFO: \(diagnostics.responseFifoPath) (exists: \(diagnostics.responseFifoExists))
+        Helper Log: \(diagnostics.logPath)
+        """
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(summary, forType: .string)
+    }
+
+    private func requestAction(_ action: PendingUnsavedAction) {
+        if shouldGuardUnsavedChanges(for: action) {
+            pendingUnsavedAction = action
+            return
+        }
+        performAction(action)
+    }
+
+    private func shouldGuardUnsavedChanges(for action: PendingUnsavedAction) -> Bool {
+        guard hasUnsavedGroupChanges else { return false }
+        switch action {
+        case .select(let id):
+            return id != store.activeGroupId
+        case .showNewGroup, .delete, .duplicate, .exportAll, .exportSelected, .importProfiles, .start:
+            return true
+        }
+    }
+
+    private func continueAfterSavingDraft() {
+        guard let action = pendingUnsavedAction else { return }
+        pendingUnsavedAction = nil
+        guard saveActiveDraft() else { return }
+        performAction(action)
+    }
+
+    private func continueAfterDiscardingDraft() {
+        guard let action = pendingUnsavedAction else { return }
+        pendingUnsavedAction = nil
+        resetEditorDraft()
+        performAction(action)
+    }
+
+    @discardableResult
+    private func saveActiveDraft() -> Bool {
+        guard canSaveActiveDraft, let activeDraft else { return false }
+        model.saveGroup(activeDraft)
+        hasUnsavedGroupChanges = false
+        self.activeDraft = activeDraft
+        return true
+    }
+
+    private func resetEditorDraft() {
+        activeDraft = nil
+        hasUnsavedGroupChanges = false
+        editorResetID = UUID()
+    }
+
+    private func performAction(_ action: PendingUnsavedAction) {
+        switch action {
+        case .select(let id):
+            model.selectGroup(id)
+            resetEditorDraft()
+        case .showNewGroup:
+            showingNewGroup = true
+        case .delete(let group):
+            model.deleteGroup(group)
+            resetEditorDraft()
+        case .duplicate(let group):
+            let source = store.groups.first { $0.id == group.id } ?? group
+            model.duplicateGroup(source)
+            resetEditorDraft()
+        case .exportAll:
+            model.exportProfiles()
+        case .exportSelected(let group):
+            let source = store.groups.first { $0.id == group.id } ?? group
+            model.exportProfiles(group: source)
+        case .importProfiles(let mode):
+            model.importProfiles(mode: mode)
+            resetEditorDraft()
+        case .start:
+            model.startOrStopSelectedGroup()
+        }
     }
 
 }

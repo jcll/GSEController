@@ -6,9 +6,20 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  XCODE_PROJECT: GSEController.xcodeproj
+  XCODE_SCHEME: GSEController
+  XCODE_DESTINATION: platform=macOS,arch=arm64
+  DERIVED_DATA: ${{ runner.temp }}/GSEControllerDerivedData
+
 jobs:
-  build:
+  hygiene:
     runs-on: macos-26
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
 
@@ -19,14 +30,125 @@ jobs:
           PRODUCT_BUNDLE_IDENTIFIER = $(BUNDLE_ID_PREFIX).GSEController
           EOF
 
-      - name: Build and Test
+      - name: Check repository hygiene
+        run: |
+          git diff --check
+          if git ls-files --error-unmatch LocalConfig.xcconfig >/dev/null 2>&1; then
+            echo "::error::LocalConfig.xcconfig must not be committed"
+            exit 1
+          fi
+          if git ls-files '*.DS_Store' | grep -q .; then
+            echo "::error::.DS_Store files must not be committed"
+            git ls-files '*.DS_Store'
+            exit 1
+          fi
+
+  unit-tests:
+    runs-on: macos-26
+    timeout-minutes: 25
+    needs: hygiene
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create LocalConfig.xcconfig
+        run: |
+          cat > LocalConfig.xcconfig << 'EOF'
+          BUNDLE_ID_PREFIX = com.example
+          PRODUCT_BUNDLE_IDENTIFIER = $(BUNDLE_ID_PREFIX).GSEController
+          EOF
+
+      - name: Run unit tests
         run: |
           xcodebuild \
-            -project GSEController.xcodeproj \
-            -scheme GSEController \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
             -configuration Debug \
-            -destination 'platform=macOS' \
+            -destination "$XCODE_DESTINATION" \
+            -derivedDataPath "$DERIVED_DATA" \
+            -resultBundlePath "$RUNNER_TEMP/GSEController-UnitTests.xcresult" \
             test \
+            -skip-testing:GSEControllerUITests \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO
+
+      - name: Upload unit test result bundle
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GSEController-UnitTests-xcresult
+          path: ${{ runner.temp }}/GSEController-UnitTests.xcresult
+          if-no-files-found: ignore
+
+  ui-tests:
+    runs-on: macos-26
+    timeout-minutes: 35
+    needs: hygiene
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create LocalConfig.xcconfig
+        run: |
+          cat > LocalConfig.xcconfig << 'EOF'
+          BUNDLE_ID_PREFIX = com.example
+          PRODUCT_BUNDLE_IDENTIFIER = $(BUNDLE_ID_PREFIX).GSEController
+          EOF
+
+      - name: Run UI tests
+        run: |
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration Debug \
+            -destination "$XCODE_DESTINATION" \
+            -derivedDataPath "$DERIVED_DATA" \
+            -resultBundlePath "$RUNNER_TEMP/GSEController-UITests.xcresult" \
+            test \
+            -only-testing:GSEControllerUITests \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Upload UI test result bundle
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GSEController-UITests-xcresult
+          path: ${{ runner.temp }}/GSEController-UITests.xcresult
+          if-no-files-found: ignore
+
+  release-build:
+    runs-on: macos-26
+    timeout-minutes: 20
+    needs: hygiene
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create LocalConfig.xcconfig
+        run: |
+          cat > LocalConfig.xcconfig << 'EOF'
+          BUNDLE_ID_PREFIX = com.example
+          PRODUCT_BUNDLE_IDENTIFIER = $(BUNDLE_ID_PREFIX).GSEController
+          EOF
+
+      - name: Build Release
+        run: |
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration Release \
+            -destination "$XCODE_DESTINATION" \
+            -derivedDataPath "$DERIVED_DATA" \
+            -resultBundlePath "$RUNNER_TEMP/GSEController-ReleaseBuild.xcresult" \
+            build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Upload release build result bundle
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: GSEController-ReleaseBuild-xcresult
+          path: ${{ runner.temp }}/GSEController-ReleaseBuild.xcresult
+          if-no-files-found: ignore

@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 // MARK: - Binding Row
 
@@ -22,7 +23,7 @@ struct BindingRow: View {
         switch binding.mode {
         case .hold:         return "\(keyText) · Rapid · \(Int(binding.rate))ms"
         case .tap:          return "\(keyText) · Tap"
-        case .modifierHold: return "Modifier: \(binding.modifier.displayName)"
+        case .modifierHold: return "Hold \(binding.modifier.displayName)"
         }
     }
 
@@ -38,34 +39,28 @@ struct BindingRow: View {
         VStack(alignment: .leading, spacing: 6) {
             // Top row: button picker + mode picker + delete
             HStack(spacing: 8) {
-                Picker("Button", selection: $binding.button) {
+                Picker("Button", selection: buttonPickerBinding) {
                     ForEach(ControllerButton.allCases) { btn in
-                        Text(btn.displayName)
+                        let isUsed = usedButtons.contains(btn) && btn != binding.button
+                        Text(isUsed ? "\(btn.displayName) (used)" : btn.displayName)
+                            .foregroundStyle(isUsed ? .secondary : .primary)
                             .tag(btn)
-                            .disabled(usedButtons.contains(btn) && btn != binding.button)
                     }
                 }
                 .labelsHidden()
                 .frame(width: 110)
                 .onChange(of: binding.button) { _, newButton in
-                    if newButton.isDpad && binding.mode != .modifierHold {
-                        binding.mode = .modifierHold
-                        if binding.modifier == .none { binding.modifier = .alt }
-                    }
+                    normalizeForButton(newButton)
                 }
 
-                Picker("Mode", selection: $binding.mode) {
+                Picker("Mode", selection: modePickerBinding) {
                     Text("Rapid").tag(FireMode.hold)
                     Text("Tap").tag(FireMode.tap)
                     Text("Modifier").tag(FireMode.modifierHold)
                 }
                 .labelsHidden()
                 .frame(width: 105)
-                .onChange(of: binding.mode) { _, newMode in
-                    if newMode == .modifierHold && binding.modifier == .none {
-                        binding.modifier = .alt
-                    }
-                }
+                .onChange(of: binding.mode) { _, _ in normalizeForCurrentMode() }
 
                 Spacer()
 
@@ -96,6 +91,8 @@ struct BindingRow: View {
                     .font(.caption2).foregroundStyle(.secondary)
                 Text(headlineAction)
                     .font(.callout.weight(.medium))
+                    .accessibilityIdentifier("binding-headline")
+                    .accessibilityLabel(headlineAction)
                 if !binding.label.isEmpty {
                     Text("· \(binding.label)")
                         .font(.caption).foregroundStyle(.secondary)
@@ -159,7 +156,7 @@ struct BindingRow: View {
                 .font(.caption)
         }
         .padding(10)
-        .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 
     private var rateRow: some View {
@@ -174,19 +171,16 @@ struct BindingRow: View {
                     ratePresetButton(preset.label, value: preset.value)
                 }
                 Spacer()
-                Text("\(Int(binding.rate))ms")
-                    .font(.caption.monospacedDigit())
+                RateInputField(rate: $binding.rate)
+                Text("ms")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
             if isCustom {
                 HStack {
                     Text("Fast").font(.caption2).foregroundStyle(.tertiary)
-                    Slider(value: $binding.rate, in: 50...500, step: 10)
+                    Slider(value: rateSliderBinding, in: 50...500, step: 10)
                     Text("Slow").font(.caption2).foregroundStyle(.tertiary)
-                    Text("\(Int(binding.rate))ms")
-                        .monospacedDigit()
-                        .font(.caption)
-                        .frame(width: 42, alignment: .trailing)
                 }
             }
         }
@@ -211,5 +205,126 @@ struct BindingRow: View {
                 }
             }
         )
+    }
+
+    private var buttonPickerBinding: Binding<ControllerButton> {
+        Binding(
+            get: { binding.button },
+            set: { newButton in
+                guard newButton == binding.button || !usedButtons.contains(newButton) else { return }
+                binding.button = newButton
+                normalizeForButton(newButton)
+            }
+        )
+    }
+
+    private var modePickerBinding: Binding<FireMode> {
+        Binding(
+            get: { binding.mode },
+            set: { newMode in
+                binding.mode = binding.button.isDpad ? .modifierHold : newMode
+                normalizeForCurrentMode()
+            }
+        )
+    }
+
+    private var rateSliderBinding: Binding<Double> {
+        Binding(
+            get: { min(max(binding.rate, 50), 500) },
+            set: { binding.rate = $0 }
+        )
+    }
+
+    private func normalizeForButton(_ button: ControllerButton) {
+        if button.isDpad && binding.mode != .modifierHold {
+            binding.mode = .modifierHold
+        }
+        normalizeForCurrentMode()
+    }
+
+    private func normalizeForCurrentMode() {
+        if binding.button.isDpad && binding.mode != .modifierHold {
+            binding.mode = .modifierHold
+        }
+        if binding.mode == .modifierHold && binding.modifier == .none {
+            binding.modifier = .alt
+        }
+    }
+}
+
+private struct RateInputField: View {
+    @Binding var rate: Double
+
+    var body: some View {
+        RateTextField(rate: $rate)
+            .frame(width: 54)
+            .accessibilityIdentifier("binding-rate-field")
+    }
+}
+
+private struct RateTextField: NSViewRepresentable {
+    @Binding var rate: Double
+
+    func makeNSView(context: Context) -> NSTextField {
+        let field = NSTextField()
+        field.delegate = context.coordinator
+        field.alignment = .right
+        field.controlSize = .small
+        field.bezelStyle = .roundedBezel
+        field.font = .monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
+        field.setAccessibilityIdentifier("binding-rate-field")
+        return field
+    }
+
+    func updateNSView(_ field: NSTextField, context: Context) {
+        context.coordinator.parent = self
+        guard !context.coordinator.isEditing else { return }
+        field.stringValue = "\(Int(rate))"
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    @MainActor final class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: RateTextField
+        var isEditing = false
+
+        init(parent: RateTextField) {
+            self.parent = parent
+        }
+
+        func controlTextDidBeginEditing(_ notification: Notification) {
+            isEditing = true
+            guard let field = notification.object as? NSTextField else { return }
+            DispatchQueue.main.async {
+                field.currentEditor()?.selectAll(nil)
+            }
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let field = notification.object as? NSTextField else { return }
+            updateRate(from: field.stringValue)
+        }
+
+        func controlTextDidEndEditing(_ notification: Notification) {
+            isEditing = false
+            guard let field = notification.object as? NSTextField else { return }
+            commit(field)
+        }
+
+        private func updateRate(from string: String) {
+            guard let value = Double(string), (33...1000).contains(value) else { return }
+            parent.rate = value.rounded()
+        }
+
+        private func commit(_ field: NSTextField) {
+            guard let value = Double(field.stringValue) else {
+                field.stringValue = "\(Int(parent.rate))"
+                return
+            }
+            parent.rate = min(max(value.rounded(), 33), 1000)
+            field.stringValue = "\(Int(parent.rate))"
+        }
     }
 }

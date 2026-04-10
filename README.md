@@ -18,6 +18,7 @@ D-pad buttons add a second layer: hold one and it sends a modifier key (Alt/Shif
 ## Features
 
 - **Multiple profiles** — one per class/spec, switch from the sidebar
+- **Profile duplication and notes** — clone a setup for a variant and keep keybind/spec notes with it
 - **Per-button configuration** — assign any controller button to any key, with any fire mode
 - **Three fire modes:**
   - **Rapid** — spams the key while held (for GSE rotation macros)
@@ -27,6 +28,7 @@ D-pad buttons add a second layer: hold one and it sends a modifier key (Alt/Shif
 - **Controller map** — visual overview of all your bindings at a glance
 - **WoW focus guard** — optionally only fires when WoW is the active window
 - **Profile templates** — pre-built starting points for common specs and roles
+- **Safer imports and diagnostics** — preview replace/merge imports, release held keys, and copy helper diagnostics for troubleshooting
 
 ## Requirements
 
@@ -57,8 +59,9 @@ On first launch, macOS will ask for Accessibility permission — this is require
 1. Launch GSEController and connect your controller
 2. Click **+** and pick a profile template for your role, or start blank
 3. For each binding, set the button, fire mode, and key to match your GSE macro keybind
-4. Set the fire rate — **250 ms** is the conservative default, and **100 ms** is available for faster sequences. If your GSE macro has a custom `ms` setting, match that value.
-5. Click **Save**, then click **Start**
+4. Add notes for the macro/keybind setup if you want that context saved with the profile
+5. Set the fire rate — **250 ms** is the conservative default, and **100 ms** is available for faster sequences. If your GSE macro has a custom `ms` setting, match that value.
+6. Click **Save**, then click **Start**
 
 ### In WoW
 
@@ -146,7 +149,7 @@ xcodebuild -project GSEController.xcodeproj -scheme GSEController -destination '
 xcodebuild test -project GSEController.xcodeproj -scheme GSEController -destination 'platform=macOS,arch=arm64'
 ```
 
-139 Swift Testing checks across 24 suites cover `Models`, `ControllerManager`, `FireEngine`, `KeySimulator`, and `DualSenseBatteryMonitor`. Focused injected test doubles keep helper-dependent tests in-process via `TEST_HOST`/`BUNDLE_LOADER`.
+127 Swift Testing checks across 24 suites cover `Models`, `ControllerManager`, `FireEngine`, `KeySimulator`, and `DualSenseBatteryMonitor`. Three UI tests cover profile creation/start, unsaved-edit protection, and numeric rate entry. Focused injected test doubles keep helper-dependent tests in-process via `TEST_HOST`/`BUNDLE_LOADER`.
 
 ## License
 

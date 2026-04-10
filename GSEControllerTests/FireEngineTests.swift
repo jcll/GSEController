@@ -5,6 +5,18 @@ import Testing
 private final class MockKeyInjector: KeyInjecting, @unchecked Sendable {
     var isAccessibilityEnabled = true
     var isHelperAccessibilityEnabled = true
+    var diagnostics = KeyHelperDiagnostics(
+        helperPath: "/tmp/keyhelper",
+        launchAgentPath: "/tmp/keyhelper.plist",
+        launchAgentLabel: "test.helper",
+        fifoPath: "/tmp/keyfifo",
+        responseFifoPath: "/tmp/keyfifo-response",
+        logPath: "/tmp/helper.log",
+        helperExists: true,
+        launchAgentExists: true,
+        fifoExists: true,
+        responseFifoExists: true
+    )
     private let lock = NSLock()
     private var recordedEvents: [String] = []
     var events: [String] {

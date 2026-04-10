@@ -5,11 +5,18 @@ import SwiftUI
 struct ControllerMapView: View {
     let bindings: [MacroBinding]
 
-    private static let faceRow: [ControllerButton] = [.buttonWest, .buttonNorth, .buttonSouth, .buttonEast, .l3, .r3]
+    private static let faceButtons: [ControllerButton] = [.buttonNorth, .buttonWest, .buttonEast, .buttonSouth, .l3, .r3]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Shoulder/trigger row
+            if !bindings.isEmpty {
+                HStack(spacing: 12) {
+                    legendDot(.green, "Rapid")
+                    legendDot(.blue, "Tap")
+                    legendDot(.orange, "Modifier")
+                }
+            }
+
             HStack(spacing: 8) {
                 chipView(.leftTrigger)
                 chipView(.leftShoulder)
@@ -18,32 +25,68 @@ struct ControllerMapView: View {
                 chipView(.rightTrigger)
             }
 
-            // D-pad row
-            HStack(spacing: 8) {
-                chipView(.dpadLeft)
-                chipView(.dpadDown)
-                chipView(.dpadRight)
-                chipView(.dpadUp)
+            HStack(alignment: .top, spacing: 18) {
+                dpadCluster
                 Spacer()
-            }
 
-            // Face/stick row — only if any are configured
-            if Self.faceRow.contains(where: { btn in bindings.contains { $0.button == btn } }) {
-                HStack(spacing: 8) {
-                    ForEach(Self.faceRow, id: \.self) { chipView($0) }
-                }
-            }
-
-            // Legend — only shown when there are bindings to reference
-            if !bindings.isEmpty {
-                HStack(spacing: 12) {
-                    legendDot(.green, "Rapid")
-                    legendDot(.blue, "Tap")
-                    legendDot(.orange, "Modifier")
+                if Self.faceButtons.contains(where: { btn in bindings.contains { $0.button == btn } }) {
+                    faceCluster
                 }
             }
         }
         .padding(.vertical, 4)
+    }
+
+    private var dpadCluster: some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 4) {
+                chipSpacer
+                chipView(.dpadUp)
+                chipSpacer
+            }
+            HStack(spacing: 4) {
+                chipView(.dpadLeft)
+                chipSpacer
+                chipView(.dpadRight)
+            }
+            HStack(spacing: 4) {
+                chipSpacer
+                chipView(.dpadDown)
+                chipSpacer
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private var faceCluster: some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 4) {
+                chipSpacer
+                chipView(.buttonNorth)
+                chipSpacer
+            }
+            HStack(spacing: 4) {
+                chipView(.buttonWest)
+                chipSpacer
+                chipView(.buttonEast)
+            }
+            HStack(spacing: 4) {
+                chipSpacer
+                chipView(.buttonSouth)
+                chipSpacer
+            }
+            HStack(spacing: 8) {
+                chipView(.l3)
+                chipView(.r3)
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private var chipSpacer: some View {
+        Color.clear
+            .frame(width: 44, height: 34)
+            .accessibilityHidden(true)
     }
 
     private func binding(for button: ControllerButton) -> MacroBinding? {
@@ -59,7 +102,7 @@ struct ControllerMapView: View {
     }
 
     private func actionBadgeText(_ b: MacroBinding) -> String {
-        let keyText = b.modifier == .none ? b.keyName : "\(b.modifier.displayName.prefix(1))+\(b.keyName)"
+        let keyText = b.modifier == .none ? b.keyName : "\(modifierBadgeName(b.modifier))+\(b.keyName)"
         switch b.mode {
         case .hold:         return "R·\(keyText)·\(Int(b.rate))ms"
         case .tap:          return "T·\(keyText)"
@@ -77,18 +120,19 @@ struct ControllerMapView: View {
             if let b {
                 let color = modeColor(b.mode)
                 Text(actionBadgeText(b))
-                    .font(.system(size: 9, weight: .medium))
+                    .font(.caption2.weight(.medium))
                     .foregroundStyle(color)
                     .padding(.horizontal, 4).padding(.vertical, 2)
                     .background(color.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
             } else {
                 Text("—")
-                    .font(.system(size: 9))
+                    .font(.caption2)
                     .foregroundStyle(.quaternary)
                     .padding(.horizontal, 4).padding(.vertical, 2)
                     .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 4))
             }
         }
+        .frame(minWidth: 44, minHeight: 34)
         .accessibilityElement(children: .combine)
         .accessibilityLabel({
             guard let b else { return "\(button.displayName): unbound" }
@@ -99,6 +143,15 @@ struct ControllerMapView: View {
             case .modifierHold: return "\(button.displayName): \(b.modifier.displayName) modifier"
             }
         }())
+    }
+
+    private func modifierBadgeName(_ modifier: KeyModifier) -> String {
+        switch modifier {
+        case .none:  return ""
+        case .alt:   return "Alt"
+        case .shift: return "Sft"
+        case .ctrl:  return "Ctl"
+        }
     }
 
     private func legendDot(_ color: Color, _ label: String) -> some View {

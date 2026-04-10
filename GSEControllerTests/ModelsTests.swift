@@ -164,16 +164,31 @@ import Testing
             mode: .hold,
             rate: 250
         )
-        let group = ProfileGroup(name: "Test", bindings: [binding])
+        let group = ProfileGroup(name: "Test", bindings: [binding], notes: "Use K on bar 1")
         let groups = [group]
         let encoded = try JSONEncoder().encode(groups)
         let decoded = try JSONDecoder().decode([ProfileGroup].self, from: encoded)
         #expect(decoded.count == 1)
         #expect(decoded[0].name == "Test")
+        #expect(decoded[0].notes == "Use K on bar 1")
         #expect(decoded[0].bindings.count == 1)
         #expect(decoded[0].bindings[0].button == .rightShoulder)
         #expect(decoded[0].bindings[0].mode == .hold)
         #expect(decoded[0].bindings[0].rate == 250)
+    }
+
+    @Test func decodingLegacyGroupWithoutNotesDefaultsToEmptyString() throws {
+        let json = """
+        [{
+          "id": "00000000-0000-0000-0000-000000000111",
+          "name": "Legacy",
+          "bindings": []
+        }]
+        """
+
+        let decoded = try JSONDecoder().decode([ProfileGroup].self, from: Data(json.utf8))
+
+        #expect(decoded[0].notes == "")
     }
 
     @Test func mixedModeBindingsRoundTrip() throws {
@@ -282,6 +297,23 @@ import Testing
         store.deleteGroup(second)
         #expect(store.activeGroupId == first.id)
     }
+
+    @Test func duplicateGroupCreatesFreshIDsAndUniqueCopyName() {
+        let (defaults, suite) = makeTestDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let store = ProfileStore(defaults: defaults)
+        let original = store.groups[0]
+
+        let firstCopy = store.duplicateGroup(original)
+        let secondCopy = store.duplicateGroup(original)
+
+        #expect(firstCopy.id != original.id)
+        #expect(firstCopy.bindings.map(\.id) != original.bindings.map(\.id))
+        #expect(firstCopy.name == "\(original.name) Copy")
+        #expect(secondCopy.name == "\(original.name) Copy 2")
+        #expect(store.activeGroupId == secondCopy.id)
+    }
 }
 
 // MARK: - ProfileStore Import Recovery
@@ -330,6 +362,25 @@ import Testing
 
         #expect(store.activeGroupId == sharedID)
         #expect(store.activeGroup?.name == "Imported")
+    }
+
+    @Test func mergeImportAppendsFreshCopiesWithoutReplacingExistingGroups() throws {
+        let (defaults, suite) = makeTestDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let store = ProfileStore(defaults: defaults)
+        let original = store.groups[0]
+        let imported = ProfileGroup(id: original.id, name: original.name, bindings: [
+            MacroBinding(button: .leftShoulder),
+        ])
+
+        try store.importData(JSONEncoder().encode([imported]), mode: .merge)
+
+        #expect(store.groups.count == 2)
+        #expect(store.groups[0].id == original.id)
+        #expect(store.groups[1].id != original.id)
+        #expect(store.groups[1].name == "\(original.name) 2")
+        #expect(store.activeGroupId == store.groups[1].id)
     }
 }
 

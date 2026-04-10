@@ -34,6 +34,20 @@
                ReferencedContainer = "container:GSEController.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "U50000000000000000000001"
+               BuildableName = "GSEControllerUITests.xctest"
+               BlueprintName = "GSEControllerUITests"
+               ReferencedContainer = "container:GSEController.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction
@@ -49,6 +63,16 @@
                BlueprintIdentifier = "T50000000000000000000001"
                BuildableName = "GSEControllerTests.xctest"
                BlueprintName = "GSEControllerTests"
+               ReferencedContainer = "container:GSEController.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "U50000000000000000000001"
+               BuildableName = "GSEControllerUITests.xctest"
+               BlueprintName = "GSEControllerUITests"
                ReferencedContainer = "container:GSEController.xcodeproj">
             </BuildableReference>
          </TestableReference>

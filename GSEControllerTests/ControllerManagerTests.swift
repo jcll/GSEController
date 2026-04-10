@@ -5,6 +5,18 @@ import Testing
 private final class DeferredHelperInjector: KeyInjecting, @unchecked Sendable {
     var isAccessibilityEnabled = true
     var isHelperAccessibilityEnabled = true
+    var diagnostics = KeyHelperDiagnostics(
+        helperPath: "/tmp/keyhelper",
+        launchAgentPath: "/tmp/keyhelper.plist",
+        launchAgentLabel: "test.helper",
+        fifoPath: "/tmp/keyfifo",
+        responseFifoPath: "/tmp/keyfifo-response",
+        logPath: "/tmp/helper.log",
+        helperExists: true,
+        launchAgentExists: true,
+        fifoExists: true,
+        responseFifoExists: true
+    )
     var events: [String] = []
     private var pendingCompletions: [(@MainActor (Bool) -> Void)] = []
 
@@ -188,6 +200,24 @@ private final class DeferredHelperInjector: KeyInjecting, @unchecked Sendable {
 
         manager.stop()
 
+        #expect(injector.events == ["up:alt", "up:shift", "up:ctrl"])
+    }
+
+    @Test func releaseAllInputStopsAndReportsSafetyStatus() {
+        let (defaults, suite) = makeTestDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let injector = DeferredHelperInjector()
+        let manager = ControllerManager(
+            defaults: defaults,
+            keyInjector: injector,
+            testState: .init()
+        )
+
+        manager.releaseAllInput()
+
+        #expect(!manager.isRunning)
+        #expect(manager.statusMessage == "Released all held keys")
         #expect(injector.events == ["up:alt", "up:shift", "up:ctrl"])
     }
 }

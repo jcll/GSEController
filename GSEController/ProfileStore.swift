@@ -13,6 +13,18 @@ enum ProfileStoreError: LocalizedError, Equatable {
     }
 }
 
+enum ProfileImportMode {
+    case replace
+    case merge
+
+    var actionTitle: String {
+        switch self {
+        case .replace: return "Replace Profiles"
+        case .merge:   return "Merge Profiles"
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class ProfileStore {
@@ -117,23 +129,50 @@ final class ProfileStore {
         }
     }
 
-    func exportData() throws -> Data {
-        try JSONEncoder().encode(groups)
+    @discardableResult
+    func duplicateGroup(_ group: ProfileGroup) -> ProfileGroup {
+        let copy = group.withFreshIDs(name: uniqueName(for: "\(group.name) Copy"))
+        return addGroup(copy)
     }
 
-    func importData(_ data: Data) throws {
+    func exportData(groups groupsToExport: [ProfileGroup]? = nil) throws -> Data {
+        let payload = groupsToExport ?? groups
+        return try JSONEncoder().encode(payload)
+    }
+
+    func importData(_ data: Data, mode: ProfileImportMode = .replace) throws {
+        let imported = try Self.decodeImportData(data)
+
+        switch mode {
+        case .replace:
+            let previousId = activeGroupId
+            groups = imported
+            if let previousId, imported.contains(where: { $0.id == previousId }) {
+                activeGroupId = previousId
+            } else {
+                activeGroupId = imported.first?.id
+            }
+        case .merge:
+            var existingNames = Set(groups.map(\.name))
+            let merged = imported.map { group in
+                let name = Self.uniqueName(for: group.name, existingNames: existingNames)
+                existingNames.insert(name)
+                return group.withFreshIDs(name: name)
+            }
+            groups.append(contentsOf: merged)
+            if let firstImported = merged.first {
+                activeGroupId = firstImported.id
+            }
+        }
+    }
+
+    static func decodeImportData(_ data: Data) throws -> [ProfileGroup] {
         var imported = try JSONDecoder().decode([ProfileGroup].self, from: data)
         guard !imported.isEmpty else {
             throw ProfileStoreError.emptyImport
         }
-        Self.migrateRatesToMs(&imported)
-        let previousId = activeGroupId
-        groups = imported
-        if let previousId, imported.contains(where: { $0.id == previousId }) {
-            activeGroupId = previousId
-        } else {
-            activeGroupId = imported.first?.id
-        }
+        migrateRatesToMs(&imported)
+        return imported
     }
 
     private static func migrateRatesToMs(_ groups: inout [ProfileGroup]) {
@@ -168,6 +207,19 @@ final class ProfileStore {
         } catch {
             Self.logger.error("Failed to encode groups: \(error.localizedDescription)")
         }
+    }
+
+    private func uniqueName(for baseName: String) -> String {
+        Self.uniqueName(for: baseName, existingNames: Set(groups.map(\.name)))
+    }
+
+    private static func uniqueName(for baseName: String, existingNames: Set<String>) -> String {
+        guard existingNames.contains(baseName) else { return baseName }
+        var counter = 2
+        while existingNames.contains("\(baseName) \(counter)") {
+            counter += 1
+        }
+        return "\(baseName) \(counter)"
     }
 }
 
