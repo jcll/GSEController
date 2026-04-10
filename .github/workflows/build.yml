@@ -14,7 +14,6 @@ env:
   XCODE_PROJECT: GSEController.xcodeproj
   XCODE_SCHEME: GSEController
   XCODE_DESTINATION: platform=macOS,arch=arm64
-  DERIVED_DATA: ${{ runner.temp }}/GSEControllerDerivedData
 
 jobs:
   hygiene:
@@ -64,7 +63,7 @@ jobs:
             -scheme "$XCODE_SCHEME" \
             -configuration Debug \
             -destination "$XCODE_DESTINATION" \
-            -derivedDataPath "$DERIVED_DATA" \
+            -derivedDataPath "$RUNNER_TEMP/GSEControllerDerivedData" \
             -resultBundlePath "$RUNNER_TEMP/GSEController-UnitTests.xcresult" \
             test \
             -skip-testing:GSEControllerUITests \
@@ -101,7 +100,7 @@ jobs:
             -scheme "$XCODE_SCHEME" \
             -configuration Debug \
             -destination "$XCODE_DESTINATION" \
-            -derivedDataPath "$DERIVED_DATA" \
+            -derivedDataPath "$RUNNER_TEMP/GSEControllerDerivedData" \
             -resultBundlePath "$RUNNER_TEMP/GSEController-UITests.xcresult" \
             test \
             -only-testing:GSEControllerUITests \
@@ -138,7 +137,7 @@ jobs:
             -scheme "$XCODE_SCHEME" \
             -configuration Release \
             -destination "$XCODE_DESTINATION" \
-            -derivedDataPath "$DERIVED_DATA" \
+            -derivedDataPath "$RUNNER_TEMP/GSEControllerDerivedData" \
             -resultBundlePath "$RUNNER_TEMP/GSEController-ReleaseBuild.xcresult" \
             build \
             CODE_SIGN_IDENTITY="" \
