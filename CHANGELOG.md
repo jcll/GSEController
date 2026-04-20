@@ -4,6 +4,28 @@ All notable user-facing changes to GSEController are documented here.
 
 ---
 
+## v1.1.3 — 2026-04-20
+
+### Added
+- Unsaved-changes guard in the profile editor — closing the editor or switching profiles prompts to save or discard when bindings have been modified.
+- Import preview — importing a profile now shows a confirmation dialog with the profile name before overwriting existing data.
+- Helper diagnostics card in the UI — exposes helper binary path, FIFO status, and compilation state for troubleshooting.
+- Dedicated `GSEControllerUISmoke` scheme for UI automation, separate from the default test lane.
+
+### Fixed
+- Helper Accessibility trust check now validates the helper binary directly instead of relying on FIFO health, eliminating false positives when the helper lacks Accessibility permission.
+- Start button now stays disabled until the helper is both compiled and Accessibility-trusted.
+- `install.sh` now stages the new app bundle before replacing the existing one, and verifies the replacement succeeded before deleting the old copy.
+- `install.sh` version check now handles missing or empty `LocalConfig.xcconfig` gracefully.
+- CI workflows now use `RUNNER_TEMP` at step scope instead of top-level `env`, avoiding GitHub Actions parser errors.
+
+### Changed
+- Default shared scheme no longer includes UI smoke tests; they are opt-in via `GSEControllerUISmoke` scheme.
+- README updated to explain helper trust boundaries, maintenance surface, and the verified local build/test workflow.
+- README no longer narrates obvious code behavior; focuses on architecture decisions and operational constraints.
+
+---
+
 ## v1.1.2 — 2026-04-09
 
 ### Fixed
