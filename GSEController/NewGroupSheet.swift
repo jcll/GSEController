@@ -6,7 +6,7 @@ import SwiftUI
 // toward one-handed GSE usage, but they all materialize as ordinary
 // ProfileGroup values so users can edit them freely afterward.
 struct NewGroupSheet: View {
-    let store: ProfileStore
+    let onCreateGroup: (ProfileGroup) -> Void
     @Binding var isPresented: Bool
 
     private struct ProfileTemplate: Identifiable {
@@ -134,7 +134,7 @@ struct NewGroupSheet: View {
                 LazyVGrid(columns: columns, spacing: 12) {
                     ForEach(Self.templates) { template in
                         Button(action: {
-                            store.addGroup(template.makeGroup(), activateAfterAdd: true)
+                            onCreateGroup(template.makeGroup())
                             isPresented = false
                         }) {
                             HStack(alignment: .top, spacing: 10) {
@@ -181,7 +181,7 @@ struct NewGroupSheet: View {
                 }
             }
             .padding(24)
-            .frame(width: 460)
+            .frame(minWidth: 360, idealWidth: 460, maxWidth: 560)
         }
     }
 

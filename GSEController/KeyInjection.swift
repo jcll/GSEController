@@ -23,6 +23,8 @@ protocol KeyInjecting: AnyObject, Sendable {
     var isAccessibilityEnabled: Bool { get }
     var isHelperAccessibilityEnabled: Bool { get }
     var diagnostics: KeyHelperDiagnostics { get }
+    var onFIFOFailure: (() -> Void)? { get set }
+    var onFIFORecovered: (() -> Void)? { get set }
 
     func ensureHelper(onComplete: (@MainActor (Bool) -> Void)?)
     func pressKey(_ keyCode: UInt16)
@@ -36,44 +38,68 @@ protocol KeyInjecting: AnyObject, Sendable {
 }
 
 final class KeySimulatorBridge: KeyInjecting, @unchecked Sendable {
-    var isAccessibilityEnabled: Bool { KeySimulator.isAccessibilityEnabled }
-    var isHelperAccessibilityEnabled: Bool { KeySimulator.isHelperAccessibilityEnabled }
-    var diagnostics: KeyHelperDiagnostics { KeySimulator.diagnostics }
+    private let simulator: KeySimulator
+    private var cachedDiagnostics: KeyHelperDiagnostics?
+
+    init(simulator: KeySimulator) {
+        self.simulator = simulator
+    }
+
+    var isAccessibilityEnabled: Bool { simulator.isAccessibilityEnabled }
+    var isHelperAccessibilityEnabled: Bool { simulator.isHelperAccessibilityEnabled }
+    var diagnostics: KeyHelperDiagnostics {
+        if let cached = cachedDiagnostics { return cached }
+        let fresh = simulator.diagnostics
+        cachedDiagnostics = fresh
+        return fresh
+    }
+
+    func invalidateDiagnosticsCache() {
+        cachedDiagnostics = nil
+    }
+    var onFIFOFailure: (() -> Void)? {
+        get { simulator.onFIFOFailure }
+        set { simulator.onFIFOFailure = newValue }
+    }
+    var onFIFORecovered: (() -> Void)? {
+        get { simulator.onFIFORecovered }
+        set { simulator.onFIFORecovered = newValue }
+    }
 
     func ensureHelper(onComplete: (@MainActor (Bool) -> Void)?) {
-        KeySimulator.ensureHelper(onComplete: onComplete)
+        simulator.ensureHelper(onComplete: onComplete)
     }
 
     func pressKey(_ keyCode: UInt16) {
-        KeySimulator.pressKey(keyCode)
+        simulator.pressKey(keyCode)
     }
 
     func modifierDown(_ modifier: KeyModifier) {
-        KeySimulator.modifierDown(modifier)
+        simulator.modifierDown(modifier)
     }
 
     func modifierUp(_ modifier: KeyModifier) {
-        KeySimulator.modifierUp(modifier)
+        simulator.modifierUp(modifier)
     }
 
     func requestAccessibility() {
-        KeySimulator.requestAccessibility()
+        simulator.requestAccessibility()
     }
 
     func requestHelperAccessibility() {
-        KeySimulator.requestHelperAccessibility()
+        simulator.requestHelperAccessibility()
     }
 
     func openAccessibilitySettings() {
-        KeySimulator.openAccessibilitySettings()
+        simulator.openAccessibilitySettings()
     }
 
     func revealHelperInFinder() {
-        KeySimulator.revealHelperInFinder()
+        simulator.revealHelperInFinder()
     }
 
     func stopHelper() {
-        KeySimulator.stopHelper()
+        simulator.stopHelper()
     }
 }
 
@@ -92,6 +118,8 @@ final class UITestKeyInjector: KeyInjecting, @unchecked Sendable {
         fifoExists: true,
         responseFifoExists: true
     )
+    var onFIFOFailure: (() -> Void)?
+    var onFIFORecovered: (() -> Void)?
 
     func ensureHelper(onComplete: (@MainActor (Bool) -> Void)?) {
         if let onComplete {

@@ -1,5 +1,15 @@
 import SwiftUI
 
+// Simple layout container used by sheets and the detail pane to group
+// glass-styled content. Re-evaluate after macOS 26.1 native depth cues.
+struct GlassEffectContainer<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        content()
+    }
+}
+
 // Local style buckets for the custom glass treatment. The app uses three
 // levels so shared controls read consistently without every call site having
 // to tune shadows, tint intensity, and shimmer behavior manually.
@@ -24,38 +34,46 @@ struct EnhancedGlassModifier: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
     @State private var shimmerPhase: CGFloat = 0
 
+    // TODO: After macOS 26.1 ships, check whether .glassEffect(.thick) provides
+    // sufficient native depth for dense editor layouts. If so, deprecate the
+    // shadow and shimmer layers below and collapse this modifier to a thin
+    // tint wash over .glassEffect().
+
+    // Shadows are intentionally light — native .glassEffect() already provides
+    // Liquid Glass depth on macOS 26. These values add only a subtle lift so
+    // nested cards don't visually flatten against the window background.
     private var shadowOpacity: Double {
-        if reduceTransparency { return colorScheme == .dark ? 0.06 : 0.10 }
+        if reduceTransparency { return colorScheme == .dark ? 0.04 : 0.06 }
         switch style {
-        case .primary: return colorScheme == .dark ? 0.15 : 0.25
-        case .status:  return colorScheme == .dark ? 0.10 : 0.16
-        case .nested:  return colorScheme == .dark ? 0.06 : 0.10
+        case .primary: return colorScheme == .dark ? 0.08 : 0.14
+        case .status:  return colorScheme == .dark ? 0.05 : 0.09
+        case .nested:  return colorScheme == .dark ? 0.03 : 0.05
         }
     }
 
     private var shadowRadius: CGFloat {
-        if reduceTransparency { return 4 }
+        if reduceTransparency { return 3 }
         switch style {
-        case .primary: return 8
-        case .status:  return 6
-        case .nested:  return 3
+        case .primary: return 5
+        case .status:  return 4
+        case .nested:  return 2
         }
     }
 
     private var shadowY: CGFloat {
-        if reduceTransparency { return 2 }
+        if reduceTransparency { return 1 }
         switch style {
-        case .primary: return 4
-        case .status:  return 3
+        case .primary: return 2
+        case .status:  return 2
         case .nested:  return 1
         }
     }
 
     private var tintHaloOpacity: Double {
         switch style {
-        case .primary: return 0.35
-        case .status:  return 0.18
-        case .nested:  return 0.12
+        case .primary: return 0.22
+        case .status:  return 0.12
+        case .nested:  return 0.08
         }
     }
 

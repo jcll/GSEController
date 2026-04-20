@@ -78,6 +78,12 @@ fi
 require_tool swift
 require_tool xcodebuild
 require_tool xattr
+
+# Verify Xcode version — this project requires macOS 26 Tahoe+ and Xcode 26+.
+XCODE_VERSION=$(xcodebuild -version 2>/dev/null | head -1 | sed -E 's/Xcode ([0-9]+)\.([0-9]+).*/\1/')
+if [ -z "$XCODE_VERSION" ] || [ "$XCODE_VERSION" -lt 16 ]; then
+    die "Xcode 16.0 or later is required (found: $(xcodebuild -version 2>/dev/null | head -1 || echo 'unknown')). Install the latest Xcode from the Mac App Store or Apple Developer portal."
+fi
 require_file make_icon.swift "make_icon.swift not found — cannot generate icon"
 require_dir "$PROJECT_FILE" "$PROJECT_FILE not found"
 require_dir "$ICON_DIR" "$ICON_DIR not found"

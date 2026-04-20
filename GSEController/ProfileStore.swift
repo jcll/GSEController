@@ -44,6 +44,11 @@ final class ProfileStore {
     private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "com.example.gsecontroller", category: "ProfileStore")
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var saveTask: Task<Void, Never>?
+    var onSaveError: ((Error) -> Void)?
+
+    deinit {
+        MainActor.assumeIsolated { flushPendingSave() }
+    }
 
     convenience init() {
         self.init(defaults: .standard)
@@ -53,7 +58,7 @@ final class ProfileStore {
         self.defaults = defaults
         if let oldData = defaults.data(forKey: "profiles"),
            let oldProfiles = try? JSONDecoder().decode([_LegacyMacroProfile].self, from: oldData) {
-            let migrated = oldProfiles.map { p in
+            var migrated = oldProfiles.map { p in
                 ProfileGroup(
                     id: p.id,
                     name: p.name,
@@ -67,6 +72,7 @@ final class ProfileStore {
                     )]
                 )
             }
+            Self.normalizeBindings(&migrated)
             groups = migrated
             activeGroupId = migrated.first?.id
             defaults.removeObject(forKey: "profiles")
@@ -90,6 +96,7 @@ final class ProfileStore {
             do {
                 var decoded = try JSONDecoder().decode([ProfileGroup].self, from: data)
                 Self.migrateRatesToMs(&decoded)
+                Self.normalizeBindings(&decoded)
                 groups = decoded
                 if let idStr = defaults.string(forKey: "activeGroupId"),
                    let id = UUID(uuidString: idStr),
@@ -103,6 +110,7 @@ final class ProfileStore {
                 defaults.set(data, forKey: "groups_backup")
                 groups = [defaultGroup]
                 activeGroupId = defaultGroup.id
+                save()
             }
         } else {
             groups = [defaultGroup]
@@ -111,17 +119,26 @@ final class ProfileStore {
     }
 
     @discardableResult
-    func addGroup(_ group: ProfileGroup, activateAfterAdd: Bool = true) -> ProfileGroup {
-        groups.append(group)
-        if activateAfterAdd {
-            activeGroupId = group.id
+    func addGroup(_ group: ProfileGroup, activateAfterAdd: Bool = true, ensureUniqueName: Bool = true) -> ProfileGroup {
+        var groupToAdd = group
+        if ensureUniqueName {
+            groupToAdd.name = uniqueName(for: groupToAdd.name)
         }
-        return group
+        groups.append(groupToAdd)
+        if activateAfterAdd {
+            activeGroupId = groupToAdd.id
+        }
+        return groupToAdd
     }
 
     func upsertGroup(_ group: ProfileGroup) {
         guard let index = groups.firstIndex(where: { $0.id == group.id }) else { return }
-        groups[index] = group
+        var groupToSave = group
+        let existingNames = Set(groups.map(\.name)).subtracting([groups[index].name])
+        if existingNames.contains(groupToSave.name) {
+            groupToSave.name = Self.uniqueName(for: groupToSave.name, existingNames: existingNames)
+        }
+        groups[index] = groupToSave
     }
 
     func deleteGroup(_ group: ProfileGroup) {
@@ -134,12 +151,13 @@ final class ProfileStore {
     @discardableResult
     func duplicateGroup(_ group: ProfileGroup) -> ProfileGroup {
         let copy = group.withFreshIDs(name: uniqueName(for: "\(group.name) Copy"))
-        return addGroup(copy)
+        return addGroup(copy, ensureUniqueName: false)
     }
 
     func exportData(groups groupsToExport: [ProfileGroup]? = nil) throws -> Data {
         let payload = groupsToExport ?? groups
-        return try JSONEncoder().encode(payload)
+        let envelope = ["version": 1, "profiles": payload] as [String: Any]
+        return try JSONSerialization.data(withJSONObject: envelope, options: .prettyPrinted)
     }
 
     func importData(_ data: Data, mode: ProfileImportMode = .replace) throws {
@@ -174,6 +192,20 @@ final class ProfileStore {
             throw ProfileStoreError.emptyImport
         }
         migrateRatesToMs(&imported)
+        normalizeBindings(&imported)
+        for group in imported {
+            guard !group.bindings.isEmpty else {
+                throw ProfileStoreError.emptyImport
+            }
+            guard group.duplicateButtons.isEmpty else {
+                throw ProfileStoreError.emptyImport
+            }
+            for binding in group.bindings {
+                guard binding.rate >= 33 && binding.rate <= 1000 else {
+                    throw ProfileStoreError.emptyImport
+                }
+            }
+        }
         return imported
     }
 
@@ -184,6 +216,14 @@ final class ProfileStore {
                 if rate > 0 && rate <= 30 {
                     groups[i].bindings[j].rate = (1000.0 / rate).rounded()
                 }
+            }
+        }
+    }
+
+    private static func normalizeBindings(_ groups: inout [ProfileGroup]) {
+        for i in groups.indices {
+            for j in groups[i].bindings.indices {
+                groups[i].bindings[j].normalizeForPersistence()
             }
         }
     }
@@ -201,6 +241,12 @@ final class ProfileStore {
         }
     }
 
+    func flushPendingSave() {
+        saveTask?.cancel()
+        saveTask = nil
+        save()
+    }
+
     private func save() {
         do {
             let data = try JSONEncoder().encode(groups)
@@ -208,6 +254,7 @@ final class ProfileStore {
             defaults.set(activeGroupId?.uuidString, forKey: "activeGroupId")
         } catch {
             Self.logger.error("Failed to encode groups: \(error.localizedDescription)")
+            onSaveError?(error)
         }
     }
 

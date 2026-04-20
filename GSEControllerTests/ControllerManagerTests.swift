@@ -20,6 +20,8 @@ private final class DeferredHelperInjector: KeyInjecting, @unchecked Sendable {
         fifoExists: true,
         responseFifoExists: true
     )
+    var onFIFOFailure: (() -> Void)?
+    var onFIFORecovered: (() -> Void)?
     var events: [String] = []
     var helperAccessibilityRequests = 0
     private var pendingCompletions: [(@MainActor (Bool) -> Void)] = []
@@ -54,43 +56,43 @@ private final class DeferredHelperInjector: KeyInjecting, @unchecked Sendable {
 
 @Suite struct IsWoWTests {
     @Test func exactWoWBundleIDMatches() {
-        #expect(ControllerManager.isWoW(bundleID: "com.blizzard.worldofwarcraft", localizedName: nil))
+        #expect(FocusTracker.isWoW(bundleID: "com.blizzard.worldofwarcraft", localizedName: nil))
     }
 
     @Test func classicWoWBundleIDMatches() {
-        #expect(ControllerManager.isWoW(bundleID: "com.blizzard.worldofwarcraftclassic", localizedName: nil))
+        #expect(FocusTracker.isWoW(bundleID: "com.blizzard.worldofwarcraftclassic", localizedName: nil))
     }
 
     @Test func shortWoWBundleIDMatches() {
-        #expect(ControllerManager.isWoW(bundleID: "com.blizzard.wow", localizedName: nil))
+        #expect(FocusTracker.isWoW(bundleID: "com.blizzard.wow", localizedName: nil))
     }
 
     @Test func bundleIDIsCaseInsensitive() {
-        #expect(ControllerManager.isWoW(bundleID: "COM.BLIZZARD.WORLDOFWARCRAFT", localizedName: nil))
+        #expect(FocusTracker.isWoW(bundleID: "COM.BLIZZARD.WORLDOFWARCRAFT", localizedName: nil))
     }
 
     @Test func nonWoWBundleIDDoesNotMatch() {
-        #expect(!ControllerManager.isWoW(bundleID: "com.apple.finder", localizedName: nil))
+        #expect(!FocusTracker.isWoW(bundleID: "com.apple.finder", localizedName: nil))
     }
 
     @Test func nilBundleIDDoesNotMatch() {
-        #expect(!ControllerManager.isWoW(bundleID: nil, localizedName: nil))
+        #expect(!FocusTracker.isWoW(bundleID: nil, localizedName: nil))
     }
 
     @Test func localizedNameContainingWarcraftMatches() {
-        #expect(ControllerManager.isWoW(bundleID: nil, localizedName: "World of Warcraft"))
+        #expect(FocusTracker.isWoW(bundleID: nil, localizedName: "World of Warcraft"))
     }
 
     @Test func localizedNameWarcraftIsCaseInsensitive() {
-        #expect(ControllerManager.isWoW(bundleID: nil, localizedName: "WORLD OF WARCRAFT"))
+        #expect(FocusTracker.isWoW(bundleID: nil, localizedName: "WORLD OF WARCRAFT"))
     }
 
     @Test func localizedNameWithoutWarcraftDoesNotMatch() {
-        #expect(!ControllerManager.isWoW(bundleID: nil, localizedName: "Finder"))
+        #expect(!FocusTracker.isWoW(bundleID: nil, localizedName: "Finder"))
     }
 
     @Test func nilBundleIDAndNilNameDoesNotMatch() {
-        #expect(!ControllerManager.isWoW(bundleID: nil, localizedName: nil))
+        #expect(!FocusTracker.isWoW(bundleID: nil, localizedName: nil))
     }
 }
 
@@ -194,7 +196,7 @@ private final class DeferredHelperInjector: KeyInjecting, @unchecked Sendable {
         #expect(manager.statusMessage == "Resolve duplicate button assignments before starting")
     }
 
-    @Test func startRequiresHelperAccessibility() {
+    @Test func startRequiresHelperAccessibility() async {
         let (defaults, suite) = makeTestDefaults()
         defer { defaults.removePersistentDomain(forName: suite) }
 
@@ -210,6 +212,11 @@ private final class DeferredHelperInjector: KeyInjecting, @unchecked Sendable {
         ])
 
         manager.start(group: group)
+
+        #expect(!manager.isRunning)
+        #expect(manager.isStarting)
+
+        await injector.complete(true)
 
         #expect(!manager.isRunning)
         #expect(!manager.isStarting)
@@ -354,5 +361,48 @@ private final class DeferredHelperInjector: KeyInjecting, @unchecked Sendable {
         defaults.set(false, forKey: "requireWoWFocus")
         let manager = ControllerManager(defaults: defaults)
         #expect(manager.requireWoWFocus == false)
+    }
+}
+
+// MARK: - Foreground permission refresh
+
+@Suite @MainActor struct ForegroundPermissionRefreshTests {
+    private func makeTestDefaults() -> (UserDefaults, String) {
+        let suite = "com.test.gsecontroller.\(UUID().uuidString)"
+        return (UserDefaults(suiteName: suite)!, suite)
+    }
+
+    @Test func appDidBecomeActiveRechecksPermissionsEvenWhenCachedStateWasGranted() async throws {
+        let (defaults, suite) = makeTestDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let injector = DeferredHelperInjector()
+        let manager = ControllerManager(
+            defaults: defaults,
+            keyInjector: injector,
+            testState: .init()
+        )
+
+        injector.isAccessibilityEnabled = false
+        injector.isHelperAccessibilityEnabled = false
+
+        manager.appDidBecomeActive()
+
+        try await waitForPermissionsUpdate(on: manager)
+
+        #expect(manager.hasAccessibility == false)
+        #expect(manager.hasHelperAccessibility == false)
+    }
+
+    private func waitForPermissionsUpdate(on manager: ControllerManager) async throws {
+        let deadline = ContinuousClock.now + .seconds(1)
+        while ContinuousClock.now < deadline {
+            if !manager.hasAccessibility && !manager.hasHelperAccessibility {
+                return
+            }
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        Issue.record("Timed out waiting for ControllerManager permission refresh")
+        throw CancellationError()
     }
 }

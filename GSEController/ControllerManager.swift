@@ -3,8 +3,60 @@ import GameController
 import AppKit
 import Observation
 import os
-import Combine
 import UserNotifications
+
+/// Tracks whether World of Warcraft is the frontmost application and updates
+/// the shared RuntimeConfiguration accordingly. ControllerManager observes
+/// focus changes via the onFocusChanged callback.
+@MainActor
+final class FocusTracker {
+    private let runtimeConfig: RuntimeConfiguration
+    var onFocusChanged: ((Bool) -> Void)?
+
+    init(runtimeConfig: RuntimeConfiguration) {
+        self.runtimeConfig = runtimeConfig
+        setupAppTracking()
+    }
+
+    private func setupAppTracking() {
+        refreshWoWFocus()
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self, selector: #selector(activeAppChanged),
+            name: NSWorkspace.didActivateApplicationNotification, object: nil
+        )
+    }
+
+    @objc private func activeAppChanged(_ notification: Notification) {
+        guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+        let wow = FocusTracker.isWoW(app)
+        runtimeConfig.wowIsActive = wow
+        onFocusChanged?(wow)
+    }
+
+    func refreshWoWFocus() {
+        if let app = NSWorkspace.shared.frontmostApplication {
+            let wow = FocusTracker.isWoW(app)
+            runtimeConfig.wowIsActive = wow
+            onFocusChanged?(wow)
+        }
+    }
+
+    private nonisolated static let wowBundleIDs: Set<String> = [
+        "com.blizzard.worldofwarcraft",
+        "com.blizzard.worldofwarcraftclassic",
+        "com.blizzard.wow",
+    ]
+
+    nonisolated static func isWoW(_ app: NSRunningApplication) -> Bool {
+        isWoW(bundleID: app.bundleIdentifier, localizedName: app.localizedName)
+    }
+
+    nonisolated static func isWoW(bundleID: String?, localizedName: String?) -> Bool {
+        if let id = bundleID?.lowercased(), wowBundleIDs.contains(id) { return true }
+        if let name = localizedName?.lowercased(), name.contains("warcraft") { return true }
+        return false
+    }
+}
 
 @MainActor
 @Observable
@@ -28,26 +80,31 @@ final class ControllerManager {
     var helperSetupFailed = false
     var fifoHealthy = true
     var lastStartedGroupName: String?
-    var wowIsActive = false {
-        didSet { updateStatusIfRunning() }
-    }
+
+    private let runtimeConfig = RuntimeConfiguration()
+    var wowIsActive: Bool { runtimeConfig.wowIsActive }
     var requireWoWFocus: Bool {
-        didSet {
-            defaults.set(requireWoWFocus, forKey: "requireWoWFocus")
-            fireEngine.requireWoWFocus = requireWoWFocus
+        get { runtimeConfig.requireWoWFocus }
+        set {
+            runtimeConfig.requireWoWFocus = newValue
+            defaults.set(newValue, forKey: "requireWoWFocus")
+            if newValue && !runtimeConfig.wowIsActive {
+                fireEngine.stopAll()
+            }
         }
     }
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let keyInjector: KeyInjecting
     @ObservationIgnored private let fireEngine: FireEngine
+    @ObservationIgnored private let focusTracker: FocusTracker
     @ObservationIgnored private var controller: GCController?
     @ObservationIgnored private var activeGroupName: String?
     @ObservationIgnored private var activeBindings: [MacroBinding]?
     @ObservationIgnored private var startRequestID = UUID()
-    @ObservationIgnored private var firingObserver: AnyCancellable?
     // nonisolated(unsafe) so deinit can invalidate it without a MainActor hop
     @ObservationIgnored nonisolated(unsafe) private var batteryTimer: Timer?
+    @ObservationIgnored private var batteryUpdateGeneration = UUID()
     @ObservationIgnored private let dualSenseBattery = DualSenseBatteryMonitor()
     @ObservationIgnored private var lowBatteryNotified = false
 
@@ -65,19 +122,27 @@ final class ControllerManager {
 
     init(
         defaults: UserDefaults = .standard,
-        keyInjector: KeyInjecting = KeySimulatorBridge(),
+        keyInjector: KeyInjecting = KeySimulatorBridge(simulator: KeySimulator()),
         testState: TestState? = nil
     ) {
         self.defaults = defaults
         self.keyInjector = keyInjector
-        self.fireEngine = FireEngine(keyInjector: keyInjector)
+        self.fireEngine = FireEngine(runtimeConfig: runtimeConfig, keyInjector: keyInjector)
+        self.focusTracker = FocusTracker(runtimeConfig: runtimeConfig)
         self.requireWoWFocus = defaults.object(forKey: "requireWoWFocus") as? Bool ?? true
 
         if testState == nil {
             GCController.shouldMonitorBackgroundEvents = true
             setupNotifications()
-            setupAppTracking()
             setupPermissionRecheck()
+        }
+
+        focusTracker.onFocusChanged = { [weak self] wow in
+            guard let self else { return }
+            if !wow && self.requireWoWFocus {
+                self.fireEngine.stopAll()
+            }
+            self.updateStatusIfRunning()
         }
 
         if testState == nil {
@@ -87,22 +152,21 @@ final class ControllerManager {
                 self?.helperReady = ready
                 self?.helperSetupFailed = !ready
             }
-            KeySimulator.onFIFOFailure = { [weak self] in
+            keyInjector.onFIFOFailure = { [weak self] in
                 Task { @MainActor [weak self] in self?.fifoHealthy = false }
             }
-            KeySimulator.onFIFORecovered = { [weak self] in
+            keyInjector.onFIFORecovered = { [weak self] in
                 Task { @MainActor [weak self] in self?.fifoHealthy = true }
             }
         }
 
         let existing = testState == nil ? GCController.controllers().first : nil
 
-        fireEngine.requireWoWFocus = requireWoWFocus
         fireEngine.onAccessibilityRevoked = { [weak self] in
             self?.hasAccessibility = false
             self?.stop()
         }
-        firingObserver = fireEngine.$isFiring.sink { [weak self] firing in
+        fireEngine.onFiringChanged = { [weak self] firing in
             guard let self else { return }
             self.isFiring = firing
             guard self.isRunning else { return }
@@ -133,12 +197,6 @@ final class ControllerManager {
             guard let self else { return }
             self.hasAccessibility = self.keyInjector.isAccessibilityEnabled
             _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
-            self.dualSenseBattery.onUpdate = { [weak self] level, charging in
-                guard let self else { return }
-                self.batteryLevel = level
-                self.batteryCharging = charging
-                self.checkLowBattery(level: level, charging: charging)
-            }
             self.dualSenseBattery.start()
             if let gc = existing { self.connectController(gc) }
         }
@@ -155,7 +213,9 @@ final class ControllerManager {
             self, selector: #selector(controllerDisconnected),
             name: .GCControllerDidDisconnect, object: nil
         )
-        GCController.startWirelessControllerDiscovery {}
+        if GCController.controllers().isEmpty {
+            GCController.startWirelessControllerDiscovery {}
+        }
     }
 
     @objc private func controllerConnected(_ notification: Notification) {
@@ -165,6 +225,11 @@ final class ControllerManager {
     }
 
     @objc private func controllerDisconnected(_ notification: Notification) {
+        guard let disconnectedController = notification.object as? GCController else { return }
+        guard let trackedController = controller, trackedController === disconnectedController else {
+            Self.logger.info("Ignoring disconnect for untracked controller")
+            return
+        }
         Self.logger.info("Controller disconnected")
         // stop() must precede controller = nil so clearButtonHandlers() can access the
         // gamepad and nil out pressedChangedHandler closures — otherwise they leak as
@@ -176,6 +241,9 @@ final class ControllerManager {
         lowBatteryNotified = false
         stopBatteryMonitoring()
         statusMessage = "Controller disconnected"
+        if let replacement = GCController.controllers().first(where: { $0 !== disconnectedController }) {
+            connectController(replacement)
+        }
     }
 
     private func connectController(_ gc: GCController) {
@@ -185,6 +253,7 @@ final class ControllerManager {
         controllerName = gc.vendorName ?? "Controller"
         isConnected = true
         statusMessage = "Controller connected"
+        GCController.stopWirelessControllerDiscovery()
         startBatteryMonitoring()
         if isRunning, let bindings = activeBindings {
             attachHandlers(for: bindings)
@@ -200,35 +269,9 @@ final class ControllerManager {
         )
     }
 
-    @objc private func appDidBecomeActive() {
-        guard !hasAccessibility || !hasHelperAccessibility else { return }
+    @objc func appDidBecomeActive() {
         // Defer to avoid observable mutations during a view update cycle.
         Task { @MainActor [weak self] in self?.checkAccessibility() }
-    }
-
-    // MARK: - WoW Focus Tracking
-
-    private func setupAppTracking() {
-        refreshWoWFocus()
-        NSWorkspace.shared.notificationCenter.addObserver(
-            self, selector: #selector(activeAppChanged),
-            name: NSWorkspace.didActivateApplicationNotification, object: nil
-        )
-    }
-
-    @objc private func activeAppChanged(_ notification: Notification) {
-        guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
-        let wow = Self.isWoW(app)
-        fireEngine.wowIsActive = wow
-        wowIsActive = wow
-    }
-
-    private func refreshWoWFocus() {
-        if let app = NSWorkspace.shared.frontmostApplication {
-            let wow = Self.isWoW(app)
-            fireEngine.wowIsActive = wow
-            wowIsActive = wow
-        }
     }
 
     private func updateStatusIfRunning() {
@@ -240,27 +283,18 @@ final class ControllerManager {
         }
     }
 
-    private nonisolated static let wowBundleIDs: Set<String> = [
-        "com.blizzard.worldofwarcraft",
-        "com.blizzard.worldofwarcraftclassic",
-        "com.blizzard.wow",
-    ]
-
-    // internal so tests can exercise directly; NSRunningApplication overload delegates here
-    nonisolated static func isWoW(_ app: NSRunningApplication) -> Bool {
-        isWoW(bundleID: app.bundleIdentifier, localizedName: app.localizedName)
-    }
-
-    nonisolated static func isWoW(bundleID: String?, localizedName: String?) -> Bool {
-        if let id = bundleID?.lowercased(), wowBundleIDs.contains(id) { return true }
-        if let name = localizedName?.lowercased(), name.contains("warcraft") { return true }
-        return false
-    }
-
     // MARK: - Battery Monitoring
 
     private func startBatteryMonitoring() {
         batteryTimer?.invalidate()
+        let generation = UUID()
+        batteryUpdateGeneration = generation
+        dualSenseBattery.onUpdate = { [weak self] level, charging in
+            guard let self, self.batteryUpdateGeneration == generation, self.isConnected else { return }
+            self.batteryLevel = level
+            self.batteryCharging = charging
+            self.checkLowBattery(level: level, charging: charging)
+        }
         // Poll immediately and every 30s. For DualSense, GCDeviceBattery always
         // returns 0; DualSenseBatteryMonitor handles it via HID input reports or
         // device property reads and writes batteryLevel directly through onUpdate.
@@ -305,6 +339,8 @@ final class ControllerManager {
     private func stopBatteryMonitoring() {
         batteryTimer?.invalidate()
         batteryTimer = nil
+        batteryUpdateGeneration = UUID()
+        dualSenseBattery.onUpdate = nil
         batteryLevel = nil
         batteryCharging = false
     }
@@ -325,6 +361,10 @@ final class ControllerManager {
 
     deinit {
         let timer = batteryTimer
+        MainActor.assumeIsolated {
+            dualSenseBattery.onUpdate = nil
+            dualSenseBattery.stop()
+        }
         if Thread.isMainThread {
             timer?.invalidate()
         } else {
@@ -335,6 +375,7 @@ final class ControllerManager {
     // MARK: - Start / Stop
 
     func start(group: ProfileGroup) {
+        guard !isRunning && !isStarting else { return }
         let duplicateButtons = group.duplicateButtons
         guard duplicateButtons.isEmpty else {
             statusMessage = "Resolve duplicate button assignments before starting"
@@ -350,18 +391,13 @@ final class ControllerManager {
             statusMessage = "Grant Accessibility access, then try again"
             return
         }
-        hasHelperAccessibility = keyInjector.isHelperAccessibilityEnabled
-        guard hasHelperAccessibility else {
-            statusMessage = "Grant Key Helper Accessibility access, then try again"
-            return
-        }
 
         let requestID = UUID()
         startRequestID = requestID
         isStarting = true
         statusMessage = "Starting helper…"
-        fireEngine.requireWoWFocus = requireWoWFocus
-        refreshWoWFocus()
+        fireEngine.seedAXState(hasAccessibility)
+        focusTracker.refreshWoWFocus()
         keyInjector.ensureHelper { [weak self] ready in
             guard let self, self.startRequestID == requestID else { return }
             self.helperReady = ready
@@ -372,6 +408,15 @@ final class ControllerManager {
                 self.activeGroupName = nil
                 self.activeBindings = nil
                 self.statusMessage = "Key helper failed to compile"
+                return
+            }
+
+            self.hasHelperAccessibility = self.keyInjector.isHelperAccessibilityEnabled
+            guard self.hasHelperAccessibility else {
+                self.statusMessage = "Grant Key Helper Accessibility access, then try again"
+                self.isRunning = false
+                self.activeGroupName = nil
+                self.activeBindings = nil
                 return
             }
 
@@ -388,6 +433,7 @@ final class ControllerManager {
     func stop() {
         startRequestID = UUID()
         isStarting = false
+        lastStartedGroupName = nil
         fireEngine.stopAll()
         clearButtonHandlers()
         // Unconditionally release all modifiers — guards against modifier keys
@@ -436,9 +482,7 @@ final class ControllerManager {
         var seen = Set<ControllerButton>()
         for binding in bindings where seen.insert(binding.button).inserted {
             buttonInput(for: binding.button, on: gamepad)?.pressedChangedHandler = { [weak self] _, _, pressed in
-                Task { @MainActor [weak self] in
-                    self?.handleButton(binding: binding, pressed: pressed)
-                }
+                self?.handleButton(binding: binding, pressed: pressed)
             }
         }
     }
@@ -481,8 +525,9 @@ final class ControllerManager {
         // The app and helper can have different TCC states, so always query
         // them independently instead of inferring one from the other.
         hasAccessibility = keyInjector.isAccessibilityEnabled
+        let injector = keyInjector
         Task.detached(priority: .userInitiated) { [weak self] in
-            let helperAx = self?.keyInjector.isHelperAccessibilityEnabled ?? false
+            let helperAx = injector.isHelperAccessibilityEnabled
             await MainActor.run { self?.hasHelperAccessibility = helperAx }
         }
     }

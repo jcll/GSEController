@@ -50,7 +50,9 @@ cd GSEController
 
 `install.sh` builds a Release binary and copies it to `/Applications/GSEController.app`.
 
-On first launch, macOS will ask for Accessibility permission — this is required for the app to send keystrokes to WoW.
+Before **Start** becomes available, grant Accessibility access in two steps:
+- Step 1: the helper binary that actually posts key events
+- Step 2: `GSEController.app` itself so it can receive controller input in the background
 
 ## Setup guide
 
@@ -115,7 +117,7 @@ GSEController has an unusual architecture that security-conscious users should u
 
 - **Persistent launchd agent:** The helper is registered as a launchd user agent derived from your bundle identifier, for example `com.example.GSEController.helper` with the default local config. It starts at login and stays running in the background. It receives key events from the main app via a FIFO and posts them via `CGEventPost`. When no controller is connected and the main app is not running, it is dormant.
 
-- **Accessibility permission:** The helper binary (not the main app) holds the Accessibility permission used to send keystrokes. This is standard practice for apps that need to send events to other applications.
+- **Accessibility permission:** The helper binary holds the permission used to post keystrokes, and the app itself needs Accessibility access so it can keep receiving controller input while other apps are focused.
 
 If you have concerns about any of this, you can review the full source at [github.com/jcll/GSEController](https://github.com/jcll/GSEController) before building.
 
@@ -125,7 +127,8 @@ To fully remove GSEController:
 
 ```bash
 # Unload and remove the launchd agent
-HELPER_LABEL="com.example.GSEController.helper"
+APP_BUNDLE_ID="$(defaults read /Applications/GSEController.app/Contents/Info CFBundleIdentifier 2>/dev/null || echo com.example.GSEController)"
+HELPER_LABEL="${APP_BUNDLE_ID}.helper"
 launchctl bootout gui/$(id -u) "$HOME/Library/LaunchAgents/$HELPER_LABEL.plist"
 rm "$HOME/Library/LaunchAgents/$HELPER_LABEL.plist"
 
@@ -155,24 +158,27 @@ The codebase is split into a small set of layers with deliberately different job
 ### Building manually
 
 ```bash
+[ -f LocalConfig.xcconfig ] || cp LocalConfig.xcconfig.template LocalConfig.xcconfig
 xcodebuild -project GSEController.xcodeproj -scheme GSEController -destination 'platform=macOS' build
 ```
 
 ### Running tests
 
 ```bash
+[ -f LocalConfig.xcconfig ] || cp LocalConfig.xcconfig.template LocalConfig.xcconfig
 xcodebuild test -project GSEController.xcodeproj -scheme GSEController -destination 'platform=macOS,arch=arm64'
 ```
 
-The default shared scheme runs the non-UI suite only. Right now that is 129 Swift Testing checks across 24 suites covering `Models`, `ControllerManager`, `FireEngine`, `KeySimulator`, and `DualSenseBatteryMonitor`.
+The default shared scheme runs the non-UI suite only. It covers the model, controller/runtime, persistence/import, helper transport, and battery logic paths. CI also enables a small real-helper smoke check inside that suite so helper compilation, launch-agent registration, and FIFO setup do not rely entirely on manual verification.
 
 UI smoke tests are intentionally separate so they only run when you explicitly ask for them locally, or when CI sees meaningful UI-facing changes:
 
 ```bash
+[ -f LocalConfig.xcconfig ] || cp LocalConfig.xcconfig.template LocalConfig.xcconfig
 xcodebuild test -project GSEController.xcodeproj -scheme GSEControllerUISmoke -destination 'platform=macOS,arch=arm64'
 ```
 
-The UI smoke scheme covers profile creation/start, unsaved-edit protection, and numeric rate entry. Focused injected test doubles keep helper-dependent tests in-process via `TEST_HOST`/`BUNDLE_LOADER`.
+The UI smoke scheme covers profile creation/start, unsaved-edit protection, and numeric rate entry. It launches the app with `--uitesting`, which swaps the real helper bridge for `UITestKeyInjector` so the XCUI lane never depends on the live FIFO helper or local Accessibility grants.
 
 ### Repository Guide
 

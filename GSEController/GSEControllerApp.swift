@@ -12,13 +12,17 @@ struct GSEControllerApp: App {
         signal(SIGTERM, SIG_IGN) // prevent default termination before handler fires
         let src = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
         src.setEventHandler {
-            // Best-effort modifier release before exit.
+            // Best-effort modifier release before graceful termination.
             // The FIFO write may fail if the helper is already gone — that's acceptable.
-            for modifier: KeyModifier in [.alt, .shift, .ctrl] {
-                KeySimulator.modifierUp(modifier)
+            // NSApp.terminate posts willTerminateNotification so AppModel can flush
+            // pending saves; exit(0) would skip destructors and lose debounced data.
+            if let simulator = KeySimulator.current {
+                for modifier: KeyModifier in [.alt, .shift, .ctrl] {
+                    simulator.modifierUp(modifier)
+                }
+                simulator.stopHelper()
             }
-            KeySimulator.stopHelper()
-            exit(0)
+            NSApp.terminate(nil)
         }
         src.resume()
         // Retain the source for the lifetime of the app.

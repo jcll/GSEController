@@ -15,7 +15,6 @@ struct ContentView: View {
     @State private var pendingUnsavedAction: PendingUnsavedAction? = nil
     @State private var activeDraft: ProfileGroup? = nil
     @State private var hasUnsavedGroupChanges = false
-    @State private var editorResetID = UUID()
 
     private var store: ProfileStore { model.store }
     private var controller: ControllerManager { model.controller }
@@ -162,6 +161,7 @@ struct ContentView: View {
                         }
 
                         if let group = store.activeGroup {
+                            let isRunning = controller.isRunning || controller.isStarting
                             GroupEditorCard(group: group, onSave: { saved in
                                 model.saveGroup(saved)
                                 activeDraft = saved
@@ -170,11 +170,10 @@ struct ContentView: View {
                                 activeDraft = draft
                                 hasUnsavedGroupChanges = hasChanges
                             })
-                            .id(editorResetID)
-                            .disabled(controller.isRunning || controller.isStarting)
-                            .opacity((controller.isRunning || controller.isStarting) ? 0.6 : 1.0)
+                            .disabled(isRunning)
+                            .opacity(isRunning ? 0.6 : 1.0)
                             .overlay(alignment: .topTrailing) {
-                                if controller.isRunning || controller.isStarting {
+                                if isRunning {
                                     Text("Stop the controller to edit bindings")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
@@ -184,6 +183,7 @@ struct ContentView: View {
                                         .padding(12)
                                 }
                             }
+                            .transition(.opacity)
                         } else {
                             VStack(spacing: 8) {
                                 Image(systemName: "plus.square.dashed")
@@ -198,7 +198,6 @@ struct ContentView: View {
                             .frame(maxWidth: .infinity)
                             .padding(32)
                             .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
-                            .enhancedGlass(cornerRadius: 12, style: .primary)
                         }
 
                         runControlsPanel
@@ -225,7 +224,11 @@ struct ContentView: View {
         .onAppear { model.onAppear() }
         .sheet(isPresented: $showingCPInfo) { consolePortSheet }
         .sheet(isPresented: $showingNewGroup) {
-            NewGroupSheet(store: store, isPresented: $showingNewGroup)
+            NewGroupSheet(onCreateGroup: { group in
+                model.addGroup(group)
+                activeDraft = nil
+                hasUnsavedGroupChanges = false
+            }, isPresented: $showingNewGroup)
         }
         .sheet(isPresented: $showingHelperDiagnostics) {
             helperDiagnosticsSheet
@@ -254,7 +257,8 @@ struct ContentView: View {
             if let pendingImport = model.pendingImport {
                 Button(pendingImport.mode.actionTitle) {
                     model.confirmPendingImport()
-                    resetEditorDraft()
+                    activeDraft = nil
+                    hasUnsavedGroupChanges = false
                 }
             }
             Button("Cancel", role: .cancel) {
@@ -345,8 +349,11 @@ struct ContentView: View {
             Circle()
                 .fill(controller.isConnected ? .green : .red)
                 .frame(width: 10, height: 10)
-                .accessibilityHidden(true)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(controller.isConnected
+            ? "Controller connected, battery \(controller.batteryLevel.map { "\(Int($0 * 100)) percent" } ?? "unknown")"
+            : "Controller disconnected")
         .padding(16)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
         .enhancedGlass(cornerRadius: 12, tint: controller.isConnected ? .green : nil, style: .primary)
@@ -768,12 +775,12 @@ struct ContentView: View {
                     diagnosticRow("App Accessibility", controller.hasAccessibility ? "Granted" : "Missing")
                     diagnosticRow("Helper Accessibility", controller.hasHelperAccessibility ? "Granted" : "Missing")
                     diagnosticRow("Helper Ready", controller.helperReady ? "Yes" : "No")
-                    diagnosticRow("FIFO Health", controller.fifoHealthy ? "Healthy" : "Reconnecting")
-                    diagnosticRow("Launch Agent", diagnostics.launchAgentLabel)
-                    diagnosticRow("Helper", diagnostics.helperExists ? diagnostics.helperPath : "Missing at \(diagnostics.helperPath)")
-                    diagnosticRow("Launch Agent Plist", diagnostics.launchAgentExists ? diagnostics.launchAgentPath : "Missing at \(diagnostics.launchAgentPath)")
-                    diagnosticRow("Key FIFO", diagnostics.fifoExists ? diagnostics.fifoPath : "Missing at \(diagnostics.fifoPath)")
-                    diagnosticRow("AX Response FIFO", diagnostics.responseFifoExists ? diagnostics.responseFifoPath : "Missing at \(diagnostics.responseFifoPath)")
+                    diagnosticRow("Key Pipe Health", controller.fifoHealthy ? "Healthy" : "Reconnecting")
+                    diagnosticRow("Background Service", diagnostics.launchAgentLabel)
+                    diagnosticRow("Helper Binary", diagnostics.helperExists ? diagnostics.helperPath : "Missing at \(diagnostics.helperPath)")
+                    diagnosticRow("Service Config", diagnostics.launchAgentExists ? diagnostics.launchAgentPath : "Missing at \(diagnostics.launchAgentPath)")
+                    diagnosticRow("Key Pipe", diagnostics.fifoExists ? diagnostics.fifoPath : "Missing at \(diagnostics.fifoPath)")
+                    diagnosticRow("Helper Response Pipe", diagnostics.responseFifoExists ? diagnostics.responseFifoPath : "Missing at \(diagnostics.responseFifoPath)")
                     diagnosticRow("Helper Log", diagnostics.logPath)
                 }
                 .font(.caption)
@@ -904,7 +911,8 @@ struct ContentView: View {
     private func continueAfterDiscardingDraft() {
         guard let action = pendingUnsavedAction else { return }
         pendingUnsavedAction = nil
-        resetEditorDraft()
+        activeDraft = nil
+        hasUnsavedGroupChanges = false
         performAction(action)
     }
 
@@ -917,38 +925,34 @@ struct ContentView: View {
         return true
     }
 
-    private func resetEditorDraft() {
-        activeDraft = nil
-        hasUnsavedGroupChanges = false
-        editorResetID = UUID()
-    }
-
     private func performAction(_ action: PendingUnsavedAction) {
         // Centralizing these mutations keeps the "stop first, then mutate
         // selection/store/UI state" rules in one place.
-        switch action {
-        case .select(let id):
-            model.selectGroup(id)
-            resetEditorDraft()
-        case .showNewGroup:
-            showingNewGroup = true
-        case .delete(let group):
-            model.deleteGroup(group)
-            resetEditorDraft()
-        case .duplicate(let group):
-            let source = store.groups.first { $0.id == group.id } ?? group
-            model.duplicateGroup(source)
-            resetEditorDraft()
-        case .exportAll:
-            model.exportProfiles()
-        case .exportSelected(let group):
-            let source = store.groups.first { $0.id == group.id } ?? group
-            model.exportProfiles(group: source)
-        case .importProfiles(let mode):
-            model.importProfiles(mode: mode)
-            resetEditorDraft()
-        case .start:
-            model.startOrStopSelectedGroup()
+        withAnimation(.easeInOut(duration: 0.2)) {
+            switch action {
+            case .select(let id):
+                model.selectGroup(id)
+                activeDraft = nil
+                hasUnsavedGroupChanges = false
+            case .showNewGroup:
+                showingNewGroup = true
+            case .delete(let group):
+                model.deleteGroup(group)
+                activeDraft = nil
+                hasUnsavedGroupChanges = false
+            case .duplicate(let group):
+                model.duplicateGroup(group)
+                activeDraft = nil
+                hasUnsavedGroupChanges = false
+            case .exportAll:
+                model.exportProfiles()
+            case .exportSelected(let group):
+                model.exportProfiles(group: group)
+            case .importProfiles(let mode):
+                model.importProfiles(mode: mode)
+            case .start:
+                model.startOrStopSelectedGroup()
+            }
         }
     }
 

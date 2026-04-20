@@ -44,6 +44,7 @@ final class AppModel {
     private(set) var controller: ControllerManager
     var activeAlert: AppAlertContext?
     var pendingImport: ProfileImportPreview?
+    @ObservationIgnored private nonisolated(unsafe) var terminationObserver: NSObjectProtocol?
 
     init(
         store: ProfileStore? = nil,
@@ -61,9 +62,35 @@ final class AppModel {
                 testState: .init()
             )
         } else {
+            let simulator = KeySimulator()
             self.store = store ?? ProfileStore()
-            self.controller = ControllerManager()
+            self.controller = ControllerManager(
+                keyInjector: KeySimulatorBridge(simulator: simulator)
+            )
         }
+        self.store.onSaveError = { [weak self] error in
+            self?.activeAlert = AppAlertContext(
+                title: "Save Failed",
+                message: "Your profile changes could not be saved: \(error.localizedDescription)"
+            )
+        }
+
+        terminationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.store.flushPendingSave()
+            }
+        }
+    }
+
+    deinit {
+        if let terminationObserver {
+            NotificationCenter.default.removeObserver(terminationObserver)
+        }
+        MainActor.assumeIsolated { store.flushPendingSave() }
     }
 
     func onAppear() {
@@ -88,17 +115,34 @@ final class AppModel {
 
     func saveGroup(_ group: ProfileGroup) {
         store.upsertGroup(group)
+        store.flushPendingSave()
+    }
+
+    func addGroup(_ group: ProfileGroup) {
+        if controller.isRunning || controller.isStarting {
+            controller.stop()
+        }
+        _ = store.addGroup(group, activateAfterAdd: true)
+        store.flushPendingSave()
     }
 
     func duplicateGroup(_ group: ProfileGroup) {
+        if controller.isRunning || controller.isStarting {
+            controller.stop()
+        }
         _ = store.duplicateGroup(group)
+        store.flushPendingSave()
     }
 
     func deleteGroup(_ group: ProfileGroup) {
         if controller.isRunning || controller.isStarting {
             controller.stop()
         }
+        if controller.lastStartedGroupName == group.name {
+            controller.lastStartedGroupName = nil
+        }
         store.deleteGroup(group)
+        store.flushPendingSave()
     }
 
     func startOrStopSelectedGroup() {
@@ -143,20 +187,21 @@ final class AppModel {
         panel.allowsMultipleSelection = false
         panel.begin { [weak self] response in
             guard response == .OK, let url = panel.url else { return }
-            do {
-                let data = try Data(contentsOf: url)
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    do {
-                        let groups = try ProfileStore.decodeImportData(data)
-                        self.pendingImport = ProfileImportPreview(mode: mode, groups: groups, data: data)
-                    } catch {
-                        self.activeAlert = AppAlertContext(title: "Import Failed", message: error.localizedDescription)
+            Task.detached(priority: .userInitiated) { [weak self] in
+                do {
+                    let data = try Data(contentsOf: url)
+                    await MainActor.run {
+                        do {
+                            let groups = try ProfileStore.decodeImportData(data)
+                            self?.pendingImport = ProfileImportPreview(mode: mode, groups: groups, data: data)
+                        } catch {
+                            self?.activeAlert = AppAlertContext(title: "Import Failed", message: error.localizedDescription)
+                        }
                     }
-                }
-            } catch {
-                Task { @MainActor [weak self] in
-                    self?.activeAlert = AppAlertContext(title: "Import Failed", message: error.localizedDescription)
+                } catch {
+                    await MainActor.run {
+                        self?.activeAlert = AppAlertContext(title: "Import Failed", message: error.localizedDescription)
+                    }
                 }
             }
         }
@@ -167,6 +212,7 @@ final class AppModel {
         do {
             controller.stop()
             try store.importData(pendingImport.data, mode: pendingImport.mode)
+            store.flushPendingSave()
             self.pendingImport = nil
         } catch {
             activeAlert = AppAlertContext(title: "Import Failed", message: error.localizedDescription)

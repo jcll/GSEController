@@ -348,6 +348,8 @@ import Testing
 
         _ = ProfileStore(defaults: defaults)
         #expect(defaults.data(forKey: "groups_backup") == corrupt)
+        let recovered = defaults.data(forKey: "groups")
+        #expect(recovered != corrupt)
     }
 
     @Test func importPreservesActiveGroupWhenSameIDExists() throws {
@@ -365,6 +367,38 @@ import Testing
 
         #expect(store.activeGroupId == sharedID)
         #expect(store.activeGroup?.name == "Imported")
+    }
+
+    @Test func importNormalizesDpadBindingsToModifierMode() throws {
+        let (defaults, suite) = makeTestDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let store = ProfileStore(defaults: defaults)
+        let imported = ProfileGroup(name: "Imported", bindings: [
+            MacroBinding(button: .dpadDown, keyName: "K", keyCode: 0x28, modifier: .none, mode: .tap, rate: 250),
+        ])
+
+        try store.importData(JSONEncoder().encode([imported]))
+
+        let binding = try #require(store.activeGroup?.bindings.first)
+        #expect(binding.mode == .modifierHold)
+        #expect(binding.modifier == .alt)
+    }
+
+    @Test func importNormalizesModifierModeWithoutModifier() throws {
+        let (defaults, suite) = makeTestDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let store = ProfileStore(defaults: defaults)
+        let imported = ProfileGroup(name: "Imported", bindings: [
+            MacroBinding(button: .rightShoulder, keyName: "K", keyCode: 0x28, modifier: .none, mode: .modifierHold, rate: 250),
+        ])
+
+        try store.importData(JSONEncoder().encode([imported]))
+
+        let binding = try #require(store.activeGroup?.bindings.first)
+        #expect(binding.mode == .modifierHold)
+        #expect(binding.modifier == .alt)
     }
 
     @Test func mergeImportAppendsFreshCopiesWithoutReplacingExistingGroups() throws {

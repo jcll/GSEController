@@ -1,5 +1,6 @@
 import Foundation
 import IOKit.hid
+import QuartzCore
 import os
 
 /// Reads DualSense battery level directly from raw HID input reports.
@@ -53,7 +54,7 @@ final class DualSenseBatteryMonitor {
     private var knownDevices: [IOHIDDevice] = []
     // Cached reference for the no-arg pollDeviceProperty() overload.
     private var lastAttachedDevice: IOHIDDevice?
-    private var lastParsed = Date.distantPast
+    private var lastParsed: Double = 0
 
     deinit {
         // ControllerManager is @MainActor and owns this object, so deinit runs on main.
@@ -91,22 +92,20 @@ final class DualSenseBatteryMonitor {
 
     func stop() {
         guard let m = manager else { return }
+        // Deregister per-device input callbacks BEFORE closing the manager.
+        // After IOHIDManagerClose, device references may be invalid; touching
+        // them is undefined behavior. The dummy buffer below is only a placeholder
+        // for the callback signature — the actual original buffers are freed after.
+        var dummyBuf: UInt8 = 0
+        for device in knownDevices {
+            IOHIDDeviceRegisterInputReportCallback(device, &dummyBuf, 1, nil, nil)
+        }
         // Clear the matching callback before unscheduling so no queued CFRunLoop event
         // can fire it with a dangling unretained self pointer after deallocation.
         IOHIDManagerRegisterDeviceMatchingCallback(m, nil, nil)
         IOHIDManagerUnscheduleFromRunLoop(m, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
         IOHIDManagerClose(m, IOOptionBits(kIOHIDOptionsTypeNone))
         manager = nil
-        // Deregister per-device input callbacks before freeing buffers.
-        // IOHIDManagerUnscheduleFromRunLoop prevents the manager-level matching
-        // callback from firing, but per-device callbacks registered via
-        // IOHIDDeviceRegisterInputReportCallback are independent of the manager
-        // schedule and must be explicitly nil'd so no queued callback fires with
-        // a dangling context pointer or freed buffer.
-        var dummyBuf: UInt8 = 0
-        for device in knownDevices {
-            IOHIDDeviceRegisterInputReportCallback(device, &dummyBuf, 1, nil, nil)
-        }
         for b in callbackBuffers { b.deallocate() }
         callbackBuffers.removeAll()
         knownDevices.removeAll()
@@ -156,7 +155,8 @@ final class DualSenseBatteryMonitor {
 
         // Try an immediate property read — works even if gamecontrollerd has
         // seized the device and we never receive input report callbacks.
-        pollDeviceProperty(device)
+        // Use the async path to avoid blocking the main thread with HID I/O.
+        pollDevicePropertyAsync(device)
     }
 
     // MARK: - Device property polling (fallback when input reports are seized)
@@ -178,7 +178,8 @@ final class DualSenseBatteryMonitor {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let reading = Self.readBattery(sendableDevice.value) else { return }
             DispatchQueue.main.async {
-                self?.onUpdate?(reading.level, reading.charging)
+                guard let self else { return }
+                self.onUpdate?(reading.level, reading.charging)
             }
         }
     }
@@ -228,10 +229,10 @@ final class DualSenseBatteryMonitor {
     }
 
     private func handle(reportID: UInt32, data: UnsafeMutablePointer<UInt8>, length: CFIndex) {
-        // Rate-limit: parse at most once every 5 seconds.
-        let now = Date()
-        guard now.timeIntervalSince(lastParsed) >= 5 else { return }
-        lastParsed = now
+        // Rate-limit: parse at most once every 5 seconds. Use CACurrentMediaTime()
+        // instead of Date() so NTP adjustments don't break throttling.
+        let now = CACurrentMediaTime()
+        guard now - lastParsed >= 5 else { return }
 
         let offset: Int
         switch reportID {
@@ -242,9 +243,13 @@ final class DualSenseBatteryMonitor {
         guard length > offset else { return }
 
         guard let (pct, charging) = Self.parseBatteryByte(data[offset]) else { return }
+        lastParsed = now
+        let onUpdate = self.onUpdate
         Self.logger.info("DualSense battery (report): \(Int(pct * 100))% charging=\(charging)")
 
         // Defer one iteration to stay outside any in-progress SwiftUI render pass.
-        DispatchQueue.main.async { [weak self] in self?.onUpdate?(pct, charging) }
+        DispatchQueue.main.async {
+            onUpdate?(pct, charging)
+        }
     }
 }

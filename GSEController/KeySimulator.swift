@@ -4,19 +4,23 @@ import CoreGraphics
 import AppKit
 import os
 
-enum KeySimulator {
+final class KeySimulator: @unchecked Sendable {
     // Low-level helper manager. This file owns helper compilation, launchd
     // registration, FIFO transport, and helper-specific Accessibility checks.
     private static let bundleID = Bundle.main.bundleIdentifier ?? "com.example.gsecontroller"
     private static let logger = Logger(subsystem: bundleID, category: "KeySimulator")
 
+    // Weak reference so the SIGTERM handler can reach the live instance
+    // without holding a strong global singleton.
+    nonisolated(unsafe) static weak var current: KeySimulator?
+
     // Called on a background queue when a FIFO write fails and reconnect begins.
-    nonisolated(unsafe) static var onFIFOFailure: (() -> Void)?
+    nonisolated(unsafe) var onFIFOFailure: (() -> Void)?
     // Called on a background queue when the FIFO reconnects successfully.
-    nonisolated(unsafe) static var onFIFORecovered: (() -> Void)?
+    nonisolated(unsafe) var onFIFORecovered: (() -> Void)?
 
     // All access to the FIFO write fd is serialized through this lock.
-    private static let _fd = OSAllocatedUnfairLock<Int32>(initialState: -1)
+    private let _fd = OSAllocatedUnfairLock<Int32>(initialState: -1)
     private enum HelperState {
         case idle
         case settingUp
@@ -31,7 +35,7 @@ enum KeySimulator {
         var state: HelperState = .idle
         var pendingCallbacks: [(@MainActor (Bool) -> Void)] = []
     }
-    private static let _setup = OSAllocatedUnfairLock<HelperSetup>(initialState: HelperSetup())
+    private let _setup = OSAllocatedUnfairLock<HelperSetup>(initialState: HelperSetup())
     private static let fifoPath: String = {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("\(bundleID).keys")
@@ -68,18 +72,18 @@ enum KeySimulator {
             .appendingPathComponent("Library/Logs/GSEController/helper.log")
     }
 
-    static var diagnostics: KeyHelperDiagnostics {
+    var diagnostics: KeyHelperDiagnostics {
         KeyHelperDiagnostics(
-            helperPath: helperURL.path,
-            launchAgentPath: plistURL.path,
-            launchAgentLabel: agentLabel,
-            fifoPath: fifoPath,
-            responseFifoPath: responseFifoPath,
-            logPath: helperLogURL.path,
-            helperExists: FileManager.default.fileExists(atPath: helperURL.path),
-            launchAgentExists: FileManager.default.fileExists(atPath: plistURL.path),
-            fifoExists: FileManager.default.fileExists(atPath: fifoPath),
-            responseFifoExists: FileManager.default.fileExists(atPath: responseFifoPath)
+            helperPath: Self.helperURL.path,
+            launchAgentPath: Self.plistURL.path,
+            launchAgentLabel: Self.agentLabel,
+            fifoPath: Self.fifoPath,
+            responseFifoPath: Self.responseFifoPath,
+            logPath: Self.helperLogURL.path,
+            helperExists: FileManager.default.fileExists(atPath: Self.helperURL.path),
+            launchAgentExists: FileManager.default.fileExists(atPath: Self.plistURL.path),
+            fifoExists: FileManager.default.fileExists(atPath: Self.fifoPath),
+            responseFifoExists: FileManager.default.fileExists(atPath: Self.responseFifoPath)
         )
     }
 
@@ -164,9 +168,13 @@ enum KeySimulator {
         }
         """
 
+    init() {
+        Self.current = self
+    }
+
     // MARK: - Lifecycle
 
-    static func ensureHelper(onComplete: (@MainActor (Bool) -> Void)? = nil) {
+    func ensureHelper(onComplete: (@MainActor (Bool) -> Void)? = nil) {
         let (shouldSetup, immediateResult) = _setup.withLock { setup -> (Bool, Bool?) in
             switch setup.state {
             case .ready:
@@ -184,30 +192,31 @@ enum KeySimulator {
             Task { @MainActor in onComplete(result) }
         }
         guard shouldSetup else { return }
-        DispatchQueue.global(qos: .userInitiated).async {
-            let recompiled = ensureBinary()
-            guard FileManager.default.fileExists(atPath: helperURL.path) else {
-                logger.error("ensureHelper: binary missing after compile attempt, aborting")
-                completeSetup(success: false)
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            let recompiled = self.ensureBinary()
+            guard FileManager.default.fileExists(atPath: Self.helperURL.path) else {
+                Self.logger.error("ensureHelper: binary missing after compile attempt, aborting")
+                self.completeSetup(success: false)
                 return
             }
-            ensureFIFO()
-            ensureResponseFIFO()
+            self.ensureFIFO()
+            self.ensureResponseFIFO()
             // Always restart the agent when the binary was recompiled so the launchd
             // plist picks up any new env vars (e.g. RESPONSE_FIFO_PATH).
-            if recompiled || !isAgentRunning() {
-                ensureLaunchdAgent()
+            if recompiled || !self.isAgentRunning() {
+                self.ensureLaunchdAgent()
             }
-            openFIFO()
+            self.openFIFO()
         }
     }
 
-    static func stopHelper() {
+    func stopHelper() {
         _fd.withLock { fd in
             guard fd >= 0 else { return }
             Darwin.close(fd)
             fd = -1
-            logger.info("FIFO write end closed")
+            Self.logger.info("FIFO write end closed")
         }
         _setup.withLock { $0.state = .idle }
     }
@@ -215,18 +224,18 @@ enum KeySimulator {
     // MARK: - Key posting
 
     /// Press and release a key (type 0).
-    static func pressKey(_ keyCode: UInt16) {
+    func pressKey(_ keyCode: UInt16) {
         writeCommand(type: 0, keyCode: keyCode)
     }
 
     /// Send a modifier key down event (type 1). No-op for `.none`.
-    static func modifierDown(_ modifier: KeyModifier) {
+    func modifierDown(_ modifier: KeyModifier) {
         guard modifier != .none else { return }
         writeCommand(type: 1, keyCode: modifier.keyCode)
     }
 
     /// Send a modifier key up event (type 2). No-op for `.none`.
-    static func modifierUp(_ modifier: KeyModifier) {
+    func modifierUp(_ modifier: KeyModifier) {
         guard modifier != .none else { return }
         writeCommand(type: 2, keyCode: modifier.keyCode)
     }
@@ -235,37 +244,39 @@ enum KeySimulator {
         [commandType, UInt8(keyCode & 0xFF), UInt8(keyCode >> 8), 0]
     }
 
-    private static func writeCommand(type: UInt8, keyCode: UInt16) {
+    private func writeCommand(type: UInt8, keyCode: UInt16) {
         _fd.withLock { fd in
             guard fd >= 0 else {
-                logger.warning("writeCommand: helper not ready yet")
+                Self.logger.warning("writeCommand: helper not ready yet")
                 return
             }
-            let buf = encodeCommand(type: type, keyCode: keyCode)
+            let buf = Self.encodeCommand(type: type, keyCode: keyCode)
             let n = buf.withUnsafeBytes { Darwin.write(fd, $0.baseAddress!, 4) }
             if n != 4 {
-                logger.warning("FIFO write failed (errno \(errno)), reopening")
+                Self.logger.warning("FIFO write failed (errno \(errno)), reopening")
                 Darwin.close(fd)
                 fd = -1
-                onFIFOFailure?()
-                DispatchQueue.global(qos: .userInitiated).async { openFIFO() }
+                self.onFIFOFailure?()
+                DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                    self?.openFIFO()
+                }
             }
         }
     }
 
     // MARK: - Accessibility
 
-    static var isAccessibilityEnabled: Bool {
+    var isAccessibilityEnabled: Bool {
         AXIsProcessTrusted()
     }
 
-    static func requestAccessibility() {
+    func requestAccessibility() {
         let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
         let options = [key: true] as CFDictionary
         AXIsProcessTrustedWithOptions(options)
     }
 
-    static var isHelperAccessibilityEnabled: Bool {
+    var isHelperAccessibilityEnabled: Bool {
         // Execute the helper directly for AX status instead of querying the
         // running FIFO worker. TCC trust is attached to the helper binary's
         // identity, and direct execution gives an authoritative answer even if
@@ -273,46 +284,46 @@ enum KeySimulator {
         helperAccessibilityStatus(arguments: ["--check-ax"])
     }
 
-    static func requestHelperAccessibility() {
+    func requestHelperAccessibility() {
         // The helper can ask for its own TCC prompt because the helper binary,
         // not the host app, is the process that posts CGEvents.
         _ = helperAccessibilityStatus(arguments: ["--prompt-ax"])
     }
 
-    static func openAccessibilitySettings() {
+    func openAccessibilitySettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
             NSWorkspace.shared.open(url)
         }
     }
 
-    static func revealHelperInFinder() {
-        NSWorkspace.shared.selectFile(helperURL.path, inFileViewerRootedAtPath: "")
+    func revealHelperInFinder() {
+        NSWorkspace.shared.selectFile(Self.helperURL.path, inFileViewerRootedAtPath: "")
     }
 
     // MARK: - Private setup
 
     @discardableResult
-    private static func ensureBinary() -> Bool {
-        let versionURL = supportDir.appendingPathComponent("keyhelper.version")
+    private func ensureBinary() -> Bool {
+        let versionURL = Self.supportDir.appendingPathComponent("keyhelper.version")
         if let stored = try? String(contentsOf: versionURL, encoding: .utf8),
-           stored == helperVersion,
-           FileManager.default.fileExists(atPath: helperURL.path) {
-            logger.info("Key helper binary up to date")
+           stored == Self.helperVersion,
+           FileManager.default.fileExists(atPath: Self.helperURL.path) {
+            Self.logger.info("Key helper binary up to date")
             return false
         }
 
-        logger.info("Compiling key helper...")
+        Self.logger.info("Compiling key helper...")
         let src = FileManager.default.temporaryDirectory.appendingPathComponent("gse_keyhelper.c")
         do {
-            try helperSource.write(to: src, atomically: true, encoding: .utf8)
+            try Self.helperSource.write(to: src, atomically: true, encoding: .utf8)
         } catch {
-            logger.error("Failed to write source: \(error.localizedDescription, privacy: .public)")
+            Self.logger.error("Failed to write source: \(error.localizedDescription, privacy: .public)")
             return false
         }
 
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/cc")
-        proc.arguments = [src.path, "-o", helperURL.path,
+        proc.arguments = [src.path, "-o", Self.helperURL.path,
                           "-framework", "CoreGraphics",
                           "-framework", "ApplicationServices"]
         let errPipe = Pipe()
@@ -321,7 +332,7 @@ enum KeySimulator {
             try proc.run()
             proc.waitUntilExit()
         } catch {
-            logger.error("cc launch failed: \(error.localizedDescription, privacy: .public)")
+            Self.logger.error("cc launch failed: \(error.localizedDescription, privacy: .public)")
             return false
         }
 
@@ -329,70 +340,68 @@ enum KeySimulator {
             // Ad-hoc sign so the binary has a stable identity for Accessibility trust.
             let sign = Process()
             sign.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
-            sign.arguments = ["--sign", "-", "--force", helperURL.path]
+            sign.arguments = ["--sign", "-", "--force", Self.helperURL.path]
             sign.standardOutput = FileHandle.nullDevice
             sign.standardError = FileHandle.nullDevice
             try? sign.run()
             sign.waitUntilExit()
             if sign.terminationStatus == 0 {
-                try? helperVersion.write(to: versionURL, atomically: true, encoding: .utf8)
-                logger.info("Compiled and signed key helper at \(helperURL.path, privacy: .public)")
+                try? Self.helperVersion.write(to: versionURL, atomically: true, encoding: .utf8)
+                Self.logger.info("Compiled and signed key helper at \(Self.helperURL.path, privacy: .public)")
+                return true
             } else {
-                // Signing failed — binary was compiled but is unsigned. Skip version file
-                // so the next launch recompiles. Still return true so the caller restarts
-                // the launchd agent to pick up the new binary.
-                logger.warning("codesign ad-hoc sign failed — skipping version file to force recompile next launch")
+                Self.logger.error("codesign ad-hoc sign failed — helper binary is unsigned and will not have stable Accessibility trust")
+                return false
             }
-            return true
         } else {
             let errStr = String(data: errPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-            logger.error("cc failed: \(errStr, privacy: .public)")
+            Self.logger.error("cc failed: \(errStr, privacy: .public)")
         }
         return false
     }
 
-    private static func ensureFIFO() {
+    private func ensureFIFO() {
         var st = stat()
-        if lstat(fifoPath, &st) == 0 {
+        if lstat(Self.fifoPath, &st) == 0 {
             if (st.st_mode & S_IFMT) == S_IFIFO { return }
             // Not a FIFO — remove and recreate
-            Darwin.unlink(fifoPath)
+            Darwin.unlink(Self.fifoPath)
         }
-        if Darwin.mkfifo(fifoPath, 0o600) != 0 {
-            logger.error("mkfifo failed (errno \(errno))")
+        if Darwin.mkfifo(Self.fifoPath, 0o600) != 0 {
+            Self.logger.error("mkfifo failed (errno \(errno))")
         } else {
-            logger.info("Created FIFO at \(fifoPath, privacy: .public)")
+            Self.logger.info("Created FIFO at \(Self.fifoPath, privacy: .public)")
         }
     }
 
-    private static func ensureResponseFIFO() {
+    private func ensureResponseFIFO() {
         var st = stat()
-        if lstat(responseFifoPath, &st) == 0 {
+        if lstat(Self.responseFifoPath, &st) == 0 {
             if (st.st_mode & S_IFMT) == S_IFIFO { return }
-            Darwin.unlink(responseFifoPath)
+            Darwin.unlink(Self.responseFifoPath)
         }
-        if Darwin.mkfifo(responseFifoPath, 0o600) != 0 {
-            logger.error("mkfifo response FIFO failed (errno \(errno))")
+        if Darwin.mkfifo(Self.responseFifoPath, 0o600) != 0 {
+            Self.logger.error("mkfifo response FIFO failed (errno \(errno))")
         }
     }
 
-    private static func isAgentRunning() -> Bool {
+    private func isAgentRunning() -> Bool {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        p.arguments = ["print", "gui/\(getuid())/\(agentLabel)"]
+        p.arguments = ["print", "gui/\(getuid())/\(Self.agentLabel)"]
         p.standardOutput = FileHandle.nullDevice
         p.standardError = FileHandle.nullDevice
         do {
             try p.run()
         } catch {
-            logger.error("launchctl spawn failed: \(error.localizedDescription, privacy: .public)")
+            Self.logger.error("launchctl spawn failed: \(error.localizedDescription, privacy: .public)")
             return false
         }
         p.waitUntilExit()
         return p.terminationStatus == 0
     }
 
-    private static func launchctl(_ args: [String]) -> Int32 {
+    private func launchctl(_ args: [String]) -> Int32 {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
         p.arguments = args
@@ -403,9 +412,9 @@ enum KeySimulator {
         return p.terminationStatus
     }
 
-    private static func ensureLaunchdAgent() {
-        guard FileManager.default.fileExists(atPath: helperURL.path) else {
-            logger.error("Helper binary missing, skipping launchd setup")
+    private func ensureLaunchdAgent() {
+        guard FileManager.default.fileExists(atPath: Self.helperURL.path) else {
+            Self.logger.error("Helper binary missing, skipping launchd setup")
             return
         }
 
@@ -419,57 +428,58 @@ enum KeySimulator {
             <plist version="1.0">
             <dict>
                 <key>Label</key>
-                <string>\(agentLabel)</string>
+                <string>\(Self.agentLabel)</string>
                 <key>ProgramArguments</key>
                 <array>
-                    <string>\(helperURL.path)</string>
+                    <string>\(Self.helperURL.path)</string>
                 </array>
                 <key>EnvironmentVariables</key>
                 <dict>
                     <key>FIFO_PATH</key>
-                    <string>\(fifoPath)</string>
+                    <string>\(Self.fifoPath)</string>
                     <key>RESPONSE_FIFO_PATH</key>
-                    <string>\(responseFifoPath)</string>
+                    <string>\(Self.responseFifoPath)</string>
                 </dict>
                 <key>KeepAlive</key>
                 <true/>
                 <key>StandardErrorPath</key>
-                    <string>\(helperLogURL.path)</string>
+                    <string>\(Self.helperLogURL.path)</string>
             </dict>
             </plist>
             """
 
         do {
             try FileManager.default.createDirectory(
-                at: plistURL.deletingLastPathComponent(),
+                at: Self.plistURL.deletingLastPathComponent(),
                 withIntermediateDirectories: true)
-            try plist.write(to: plistURL, atomically: true, encoding: .utf8)
+            try plist.write(to: Self.plistURL, atomically: true, encoding: .utf8)
         } catch {
-            logger.error("Failed to write plist: \(error.localizedDescription, privacy: .public)")
+            Self.logger.error("Failed to write plist: \(error.localizedDescription, privacy: .public)")
             return
         }
 
         let uid = getuid()
-        _ = launchctl(["bootout", "gui/\(uid)/\(agentLabel)"])
-        let status = launchctl(["bootstrap", "gui/\(uid)", plistURL.path])
+        _ = launchctl(["bootout", "gui/\(uid)/\(Self.agentLabel)"])
+        let status = launchctl(["bootstrap", "gui/\(uid)", Self.plistURL.path])
         if status == 0 {
-            logger.info("launchd agent bootstrapped (uid=\(uid))")
+            Self.logger.info("launchd agent bootstrapped (uid=\(uid))")
         } else {
-            logger.error("launchctl bootstrap failed (status \(status))")
+            Self.logger.error("launchctl bootstrap failed (status \(status))")
         }
     }
 
-    private static func openFIFO(attempt: Int = 0) {
+    private func openFIFO(attempt: Int = 0) {
         // O_NONBLOCK prevents the open from blocking indefinitely when the helper
         // hasn't opened its read end yet. On ENXIO we retry up to 20 times (10s total).
-        let fd = Darwin.open(fifoPath, O_WRONLY | O_NONBLOCK)
+        let fd = Darwin.open(Self.fifoPath, O_WRONLY | O_NONBLOCK)
         if fd < 0 {
             if errno == ENXIO && attempt < 20 {
-                DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.5) {
-                    openFIFO(attempt: attempt + 1)
+                DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    self?.openFIFO(attempt: attempt + 1)
                 }
             } else {
-                logger.error("open FIFO failed after \(attempt) retries (errno \(errno))")
+                Self.logger.error("open FIFO failed after \(attempt) retries (errno \(errno))")
+                onFIFOFailure?()
                 completeSetup(success: false)
             }
             return
@@ -480,14 +490,14 @@ enum KeySimulator {
                 Darwin.close(fd)
             } else {
                 current = fd
-                logger.info("FIFO open for writing (fd=\(fd))")
+                Self.logger.info("FIFO open for writing (fd=\(fd))")
                 onFIFORecovered?()
             }
         }
         completeSetup(success: true)
     }
 
-    private static func completeSetup(success: Bool) {
+    private func completeSetup(success: Bool) {
         let callbacks = _setup.withLock { setup -> [(@MainActor (Bool) -> Void)] in
             setup.state = success ? .ready : .failed
             defer { setup.pendingCallbacks.removeAll() }
@@ -499,19 +509,19 @@ enum KeySimulator {
     }
 
     @discardableResult
-    private static func helperAccessibilityStatus(arguments: [String]) -> Bool {
+    private func helperAccessibilityStatus(arguments: [String]) -> Bool {
         // This direct execution path is also what keeps the diagnostics sheet
         // honest: a nonzero exit means the helper binary itself is not trusted.
-        guard FileManager.default.fileExists(atPath: helperURL.path) else { return false }
+        guard FileManager.default.fileExists(atPath: Self.helperURL.path) else { return false }
         let process = Process()
-        process.executableURL = helperURL
+        process.executableURL = Self.helperURL
         process.arguments = arguments
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         do {
             try process.run()
         } catch {
-            logger.error("helper AX check launch failed: \(error.localizedDescription, privacy: .public)")
+            Self.logger.error("helper AX check launch failed: \(error.localizedDescription, privacy: .public)")
             return false
         }
         process.waitUntilExit()

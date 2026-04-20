@@ -3,41 +3,40 @@ import AppKit
 import os
 
 @MainActor
-class FireEngine: ObservableObject {
+@Observable
+class FireEngine {
     // FireEngine owns the active repeat timers and modifier reference counts.
     // ControllerManager translates hardware button presses into bindings, but
     // this type decides when key events are actually allowed to leave the app.
     private static let bundleID = Bundle.main.bundleIdentifier ?? "com.example.gsecontroller"
     private static let logger = Logger(subsystem: bundleID, category: "FireEngine")
 
-    @Published var isFiring = false
+    var isFiring = false
 
-    private let _requireWoWFocus = OSAllocatedUnfairLock<Bool>(initialState: true)
+    let runtimeConfig: RuntimeConfiguration
+
+    // Passthrough to shared config for test convenience.
     var requireWoWFocus: Bool {
-        get { _requireWoWFocus.withLock { $0 } }
-        set { _requireWoWFocus.withLock { $0 = newValue } }
+        get { runtimeConfig.requireWoWFocus }
+        set { runtimeConfig.requireWoWFocus = newValue }
     }
-    private let _wowIsActive = OSAllocatedUnfairLock<Bool>(initialState: false)
     var wowIsActive: Bool {
-        get { _wowIsActive.withLock { $0 } }
-        set {
-            _wowIsActive.withLock { $0 = newValue }
-            if requireWoWFocus && !newValue {
-                stopAll()
-            }
-        }
+        get { runtimeConfig.wowIsActive }
+        set { runtimeConfig.wowIsActive = newValue }
     }
 
     var onAccessibilityRevoked: (() -> Void)?
+    var onFiringChanged: ((Bool) -> Void)?
     private let keyInjector: KeyInjecting
 
     /// Converts a rate in milliseconds to a clamped TimeInterval (seconds).
     /// Clamps to [33ms, 1000ms] (equivalent to 1–30 pps range).
     nonisolated static func clampedInterval(rateMs: Double) -> TimeInterval {
-        min(max(rateMs, 33.0), 1000.0) / 1000.0
+        guard rateMs.isFinite, !rateMs.isNaN else { return 0.25 }
+        return min(max(rateMs, 33.0), 1000.0) / 1000.0
     }
 
-    private var activeTimers: [ControllerButton: DispatchSourceTimer] = [:]
+    nonisolated(unsafe) private var activeTimers: [ControllerButton: DispatchSourceTimer] = [:]
     private var activeBindings: [ControllerButton: MacroBinding] = [:]
     var heldModifiers: Set<KeyModifier> = []
     private var heldModifierCounts: [KeyModifier: Int] = [:]
@@ -54,7 +53,8 @@ class FireEngine: ObservableObject {
     // Runs on @MainActor while any timers are active; polls AX state into _axEnabled.
     private var axMonitorTask: Task<Void, Never>?
 
-    init(keyInjector: KeyInjecting = KeySimulatorBridge()) {
+    init(runtimeConfig: RuntimeConfiguration = RuntimeConfiguration(), keyInjector: KeyInjecting) {
+        self.runtimeConfig = runtimeConfig
         self.keyInjector = keyInjector
     }
 
@@ -93,8 +93,7 @@ class FireEngine: ObservableObject {
 
         let keyCode = binding.keyCode
         let interval = FireEngine.clampedInterval(rateMs: binding.rate)
-        let focusLock = _requireWoWFocus
-        let wowLock = _wowIsActive
+        let config = runtimeConfig
         let axLock = _axEnabled
         // Build the timer from a nonisolated helper so the event handler closure is
         // formed outside any actor context. In Swift 6 on macOS 26, non-@Sendable closure
@@ -103,8 +102,8 @@ class FireEngine: ObservableObject {
         // @MainActor (inheriting startFiring's isolation) and crash on fireQueue.
         let timer = FireEngine.makeTimer(
             queue: fireQueue, interval: interval,
-            keyCode: keyCode, focusLock: focusLock,
-            wowLock: wowLock, axLock: axLock,
+            keyCode: keyCode, config: config,
+            axLock: axLock,
             keyInjector: injector
         )
 
@@ -119,6 +118,7 @@ class FireEngine: ObservableObject {
             )
         }
         isFiring = true
+        onFiringChanged?(true)
 
         timer.resume()
     }
@@ -129,8 +129,7 @@ class FireEngine: ObservableObject {
         queue: DispatchQueue,
         interval: Double,
         keyCode: UInt16,
-        focusLock: OSAllocatedUnfairLock<Bool>,
-        wowLock: OSAllocatedUnfairLock<Bool>,
+        config: RuntimeConfiguration,
         axLock: OSAllocatedUnfairLock<Bool>,
         keyInjector: KeyInjecting
     ) -> DispatchSourceTimer {
@@ -138,7 +137,7 @@ class FireEngine: ObservableObject {
         timer.schedule(deadline: .now(), repeating: interval, leeway: .milliseconds(4))
         timer.setEventHandler {
             if !axLock.withLock({ $0 }) { return }
-            if focusLock.withLock({ $0 }) && !wowLock.withLock({ $0 }) { return }
+            if config.requireWoWFocus && !config.wowIsActive { return }
             keyInjector.pressKey(keyCode)
         }
         return timer
@@ -154,6 +153,7 @@ class FireEngine: ObservableObject {
             axMonitorTask?.cancel()
             axMonitorTask = nil
             isFiring = false
+            onFiringChanged?(false)
             if let a = activity { ProcessInfo.processInfo.endActivity(a); activity = nil }
         }
     }
@@ -168,6 +168,7 @@ class FireEngine: ObservableObject {
         axMonitorTask?.cancel()
         axMonitorTask = nil
         isFiring = false
+        onFiringChanged?(false)
         if let a = activity { ProcessInfo.processInfo.endActivity(a); activity = nil }
     }
 
@@ -189,15 +190,18 @@ class FireEngine: ObservableObject {
         releaseModifierIfNeeded(binding.modifier)
     }
 
+    func seedAXState(_ enabled: Bool) {
+        _axEnabled.withLock { $0 = enabled }
+    }
+
     private func canSendImmediateInput() -> Bool {
-        let axEnabled = keyInjector.isAccessibilityEnabled
-        _axEnabled.withLock { $0 = axEnabled }
+        let axEnabled = _axEnabled.withLock { $0 }
         guard axEnabled else {
             stopAll()
             onAccessibilityRevoked?()
             return false
         }
-        return !requireWoWFocus || wowIsActive
+        return !runtimeConfig.requireWoWFocus || runtimeConfig.wowIsActive
     }
 
     private func holdModifierIfNeeded(_ modifier: KeyModifier) {

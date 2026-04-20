@@ -27,14 +27,8 @@ struct GroupEditorCard: View {
     private var nameIsBlank: Bool { draft.name.trimmingCharacters(in: .whitespaces).isEmpty }
     private var duplicateButtons: Set<ControllerButton> { draft.bindings.duplicateButtons }
     private var hasDuplicateButtons: Bool { !duplicateButtons.isEmpty }
-    private var usedButtonsByBindingID: [UUID: Set<ControllerButton>] {
-        let buttonsByID = Dictionary(uniqueKeysWithValues: draft.bindings.map { ($0.id, $0.button) })
-        return Dictionary(uniqueKeysWithValues: draft.bindings.map { binding in
-            let used = Set(buttonsByID.compactMap { id, button in
-                id == binding.id ? nil : button
-            })
-            return (binding.id, used)
-        })
+    private var allUsedButtons: Set<ControllerButton> {
+        Set(draft.bindings.map(\.button))
     }
 
     var body: some View {
@@ -65,20 +59,36 @@ struct GroupEditorCard: View {
 
             Divider()
 
-            ScrollView {
+            if draft.bindings.isEmpty {
                 VStack(spacing: 8) {
-                    ForEach($draft.bindings) { $binding in
-                        BindingRow(
-                            binding: $binding,
-                            usedButtons: usedButtonsByBindingID[binding.id] ?? [],
-                            hasDuplicateAssignment: duplicateButtons.contains(binding.button),
-                            canDelete: draft.bindings.count > 1,
-                            onDelete: { draft.bindings.removeAll { $0.id == binding.id } }
-                        )
+                    Image(systemName: "plus.circle")
+                        .font(.title2)
+                        .foregroundStyle(.secondary)
+                    Text("No bindings yet")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Text("Tap Add Binding to create one")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 120)
+                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 8))
+            } else {
+                ScrollView {
+                    VStack(spacing: 8) {
+                        ForEach($draft.bindings) { $binding in
+                            BindingRow(
+                                binding: $binding,
+                                usedButtons: allUsedButtons.subtracting([binding.button]),
+                                hasDuplicateAssignment: duplicateButtons.contains(binding.button),
+                                canDelete: draft.bindings.count > 1,
+                                onDelete: { draft.bindings.removeAll { $0.id == binding.id } }
+                            )
+                        }
                     }
                 }
+                .frame(maxHeight: 500)
             }
-            .frame(maxHeight: 500)
 
             HStack {
                 Button(action: addBinding) {

@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import GSEController
 
@@ -51,19 +52,46 @@ import Testing
     // ensureHelper() is never called in the test environment, so _fd == -1.
     // modifierDown/modifierUp must be no-ops (no crash, no hang, no write).
     @Test func modifierDownIsNoOpBeforeHelperStarts() {
-        KeySimulator.modifierDown(.alt)
-        KeySimulator.modifierDown(.shift)
-        KeySimulator.modifierDown(.ctrl)
+        let simulator = KeySimulator()
+        simulator.modifierDown(.alt)
+        simulator.modifierDown(.shift)
+        simulator.modifierDown(.ctrl)
     }
 
     @Test func modifierUpIsNoOpBeforeHelperStarts() {
-        KeySimulator.modifierUp(.alt)
-        KeySimulator.modifierUp(.shift)
-        KeySimulator.modifierUp(.ctrl)
+        let simulator = KeySimulator()
+        simulator.modifierUp(.alt)
+        simulator.modifierUp(.shift)
+        simulator.modifierUp(.ctrl)
     }
 
     @Test func pressKeyIsNoOpBeforeHelperStarts() {
-        KeySimulator.pressKey(0x28) // K
-        KeySimulator.pressKey(0x00) // A
+        let simulator = KeySimulator()
+        simulator.pressKey(0x28) // K
+        simulator.pressKey(0x00) // A
+    }
+}
+
+// MARK: - Real Helper Smoke
+
+@Suite struct RealHelperSmokeTests {
+    @Test func ensureHelperCreatesArtifactsWhenEnabledInEnvironment() async {
+        guard ProcessInfo.processInfo.environment["ENABLE_REAL_HELPER_TESTS"] == "1" else { return }
+        let simulator = KeySimulator()
+        defer { simulator.stopHelper() }
+
+        let ready = await withCheckedContinuation { continuation in
+            simulator.ensureHelper { ready in
+                continuation.resume(returning: ready)
+            }
+        }
+
+        #expect(ready)
+
+        let diagnostics = simulator.diagnostics
+        #expect(diagnostics.helperExists)
+        #expect(diagnostics.launchAgentExists)
+        #expect(diagnostics.fifoExists)
+        #expect(diagnostics.responseFifoExists)
     }
 }

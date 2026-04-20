@@ -51,7 +51,8 @@ struct BindingRow: View {
                     }
                 }
                 .labelsHidden()
-                .frame(width: 110)
+                .frame(minWidth: 90)
+                .accessibilityLabel("Controller button")
                 .onChange(of: binding.button) { _, newButton in
                     normalizeForButton(newButton)
                 }
@@ -62,7 +63,8 @@ struct BindingRow: View {
                     Text("Modifier").tag(FireMode.modifierHold)
                 }
                 .labelsHidden()
-                .frame(width: 105)
+                .frame(minWidth: 85)
+                .accessibilityLabel("Fire mode")
                 .onChange(of: binding.mode) { _, _ in normalizeForCurrentMode() }
 
                 Spacer()
@@ -120,7 +122,8 @@ struct BindingRow: View {
                         Text("Ctrl").tag(KeyModifier.ctrl)
                     }
                     .labelsHidden()
-                    .frame(width: 90)
+                    .frame(minWidth: 70)
+                    .accessibilityLabel("Modifier key")
                 }
             } else {
                 // Key + modifier row
@@ -134,7 +137,8 @@ struct BindingRow: View {
                         }
                     }
                     .labelsHidden()
-                    .frame(width: 70)
+                    .frame(minWidth: 55)
+                    .accessibilityLabel("Keyboard key")
 
                     Text("Mod")
                         .font(.caption)
@@ -145,7 +149,8 @@ struct BindingRow: View {
                         }
                     }
                     .labelsHidden()
-                    .frame(width: 80)
+                    .frame(minWidth: 65)
+                    .accessibilityLabel("Key modifier")
                 }
 
                 if binding.mode == .hold {
@@ -159,7 +164,6 @@ struct BindingRow: View {
                 .font(.caption)
         }
         .padding(10)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 
     private var rateRow: some View {
@@ -182,7 +186,7 @@ struct BindingRow: View {
             if isCustom {
                 HStack {
                     Text("Fast").font(.caption2).foregroundStyle(.tertiary)
-                    Slider(value: rateSliderBinding, in: 50...500, step: 10)
+                    Slider(value: rateSliderBinding, in: 33...1000, step: 10)
                     Text("Slow").font(.caption2).foregroundStyle(.tertiary)
                 }
             }
@@ -195,6 +199,7 @@ struct BindingRow: View {
             .buttonStyle(.glass)
             .controlSize(.mini)
             .opacity(isSelected ? 1.0 : 0.5)
+            .accessibilityLabel("\(label) rate preset")
             .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
@@ -239,19 +244,12 @@ struct BindingRow: View {
     }
 
     private func normalizeForButton(_ button: ControllerButton) {
-        if button.isDpad && binding.mode != .modifierHold {
-            binding.mode = .modifierHold
-        }
-        normalizeForCurrentMode()
+        binding.button = button
+        binding = binding.normalized()
     }
 
     private func normalizeForCurrentMode() {
-        if binding.button.isDpad && binding.mode != .modifierHold {
-            binding.mode = .modifierHold
-        }
-        if binding.mode == .modifierHold && binding.modifier == .none {
-            binding.modifier = .alt
-        }
+        binding = binding.normalized()
     }
 }
 

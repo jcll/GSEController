@@ -20,6 +20,8 @@ private final class MockKeyInjector: KeyInjecting, @unchecked Sendable {
         fifoExists: true,
         responseFifoExists: true
     )
+    var onFIFOFailure: (() -> Void)?
+    var onFIFORecovered: (() -> Void)?
     private let lock = NSLock()
     private var recordedEvents: [String] = []
     var events: [String] {
@@ -261,15 +263,35 @@ private final class MockKeyInjector: KeyInjecting, @unchecked Sendable {
 
         engine.requireWoWFocus = true
         engine.wowIsActive = false
+        engine.stopAll()
 
         #expect(injector.events == ["down:alt", "up:alt"])
         #expect(engine.heldModifiers.isEmpty)
+    }
+
+    @Test func enablingFocusGuardWhileInactiveStopsFiringAndReleasesModifiers() {
+        let injector = MockKeyInjector()
+        let engine = FireEngine(keyInjector: injector)
+        engine.requireWoWFocus = false
+        engine.wowIsActive = false
+
+        engine.startFiring(binding: MacroBinding(button: .rightShoulder, keyCode: 0x28, modifier: .alt, mode: .hold))
+        #expect(engine.isFiring)
+        #expect(engine.heldModifiers.contains(.alt))
+
+        engine.requireWoWFocus = true
+        engine.stopAll()
+
+        #expect(!engine.isFiring)
+        #expect(!engine.heldModifiers.contains(.alt))
+        #expect(injector.events.contains("up:alt"))
     }
 
     @Test func accessibilityRevocationBlocksImmediateTap() {
         let injector = MockKeyInjector()
         injector.isAccessibilityEnabled = false
         let engine = FireEngine(keyInjector: injector)
+        engine.seedAXState(false)
         var revoked = false
         engine.onAccessibilityRevoked = { revoked = true }
 
@@ -284,7 +306,7 @@ private final class MockKeyInjector: KeyInjecting, @unchecked Sendable {
 
 @Suite @MainActor struct WoWIsActiveTests {
     @Test func wowIsActiveRoundTrips() {
-        let engine = FireEngine()
+        let engine = FireEngine(keyInjector: MockKeyInjector())
         engine.wowIsActive = true
         #expect(engine.wowIsActive == true)
         engine.wowIsActive = false
@@ -292,7 +314,7 @@ private final class MockKeyInjector: KeyInjecting, @unchecked Sendable {
     }
 
     @Test func requireWoWFocusRoundTrips() {
-        let engine = FireEngine()
+        let engine = FireEngine(keyInjector: MockKeyInjector())
         engine.requireWoWFocus = false
         #expect(engine.requireWoWFocus == false)
         engine.requireWoWFocus = true

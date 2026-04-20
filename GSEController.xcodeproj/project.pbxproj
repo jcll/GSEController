@@ -28,6 +28,7 @@
 		T10000000000000000000003 /* KeySimulatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T20000000000000000000003 /* KeySimulatorTests.swift */; };
 		T10000000000000000000004 /* ControllerManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T30000000000000000000004 /* ControllerManagerTests.swift */; };
 		T10000000000000000000005 /* DualSenseBatteryMonitorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T20000000000000000000005 /* DualSenseBatteryMonitorTests.swift */; };
+		T10000000000000000000006 /* AppModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T20000000000000000000006 /* AppModelTests.swift */; };
 		U10000000000000000000001 /* GSEControllerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = U20000000000000000000001 /* GSEControllerUITests.swift */; };
 /* End PBXBuildFile section */
 
@@ -57,6 +58,7 @@
 		T20000000000000000000003 /* KeySimulatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeySimulatorTests.swift; sourceTree = "<group>"; };
 		T30000000000000000000004 /* ControllerManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControllerManagerTests.swift; sourceTree = "<group>"; };
 		T20000000000000000000005 /* DualSenseBatteryMonitorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DualSenseBatteryMonitorTests.swift; sourceTree = "<group>"; };
+		T20000000000000000000006 /* AppModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModelTests.swift; sourceTree = "<group>"; };
 		T20000000000000000000004 /* GSEControllerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GSEControllerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		U20000000000000000000001 /* GSEControllerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GSEControllerUITests.swift; sourceTree = "<group>"; };
 		U20000000000000000000002 /* GSEControllerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GSEControllerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -141,6 +143,7 @@
 				T20000000000000000000003 /* KeySimulatorTests.swift */,
 				T30000000000000000000004 /* ControllerManagerTests.swift */,
 				T20000000000000000000005 /* DualSenseBatteryMonitorTests.swift */,
+				T20000000000000000000006 /* AppModelTests.swift */,
 			);
 			path = GSEControllerTests;
 			sourceTree = "<group>";
@@ -293,6 +296,7 @@
 				T10000000000000000000003 /* KeySimulatorTests.swift in Sources */,
 				T10000000000000000000004 /* ControllerManagerTests.swift in Sources */,
 				T10000000000000000000005 /* DualSenseBatteryMonitorTests.swift in Sources */,
+				T10000000000000000000006 /* AppModelTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

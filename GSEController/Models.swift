@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 // rawValues are stable internal keys (case name). Legacy display-string values
 // (e.g. "R1", "A / Cross") are handled by the custom init(from:) below.
@@ -175,6 +176,21 @@ struct MacroBinding: Identifiable, Codable, Equatable {
         self.rate = rate
         self.label = label
     }
+
+    mutating func normalizeForPersistence() {
+        self = normalized()
+    }
+
+    func normalized() -> MacroBinding {
+        var copy = self
+        if copy.button.isDpad {
+            copy.mode = .modifierHold
+        }
+        if copy.mode == .modifierHold && copy.modifier == .none {
+            copy.modifier = .alt
+        }
+        return copy
+    }
 }
 
 struct ProfileGroup: Identifiable, Codable, Equatable {
@@ -298,5 +314,23 @@ extension Array where Element == MacroBinding {
             }
         }
         return duplicates
+    }
+}
+
+// MARK: - RuntimeConfiguration
+
+/// Thread-safe runtime configuration shared between ControllerManager and FireEngine.
+/// Uses OSAllocatedUnfairLock so timer handlers on fireQueue can read safely.
+final class RuntimeConfiguration: @unchecked Sendable {
+    private let _requireWoWFocus = OSAllocatedUnfairLock<Bool>(initialState: true)
+    var requireWoWFocus: Bool {
+        get { _requireWoWFocus.withLock { $0 } }
+        set { _requireWoWFocus.withLock { $0 = newValue } }
+    }
+
+    private let _wowIsActive = OSAllocatedUnfairLock<Bool>(initialState: false)
+    var wowIsActive: Bool {
+        get { _wowIsActive.withLock { $0 } }
+        set { _wowIsActive.withLock { $0 = newValue } }
     }
 }
